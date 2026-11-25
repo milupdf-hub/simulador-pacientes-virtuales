@@ -803,11 +803,13 @@ self.onmessage = function (ev) {
 
   // 18/11/2026, arreglos de la validación (referencias, 8.17): vd = ventrículo derecho afectado en 1 de cada 3
   // pacientes (E_es_rvf x 0,5-0,7); agudo = shock con el barorreflejo activo; fcExtra = FC de base + n lpm
+  // 25/11/2026 (referencias, 8.19): paiMax = en la IC estable se descartan los pacientes con enclavamiento > 35 mmHg
+  const aceptable = (c, v) => c.ok(v) && !(c.paiMax && v.PAI_mmHg > c.paiMax);
   const COHORTES = [
     { id: "sana", nombre: "Sano", pat: {}, vol: [0, 0, 0], ok: v => v.PAS_mmHg >= 90 && v.PAS_mmHg < 140 && v.PAD_mmHg >= 60 && v.PAD_mmHg < 90 && v.FE_pct >= 50 && v.IC_Lmin_m2 >= 2.0 && v.IC_Lmin_m2 <= 4.5 },
     { id: "hipertension", nombre: "Hipertensión", pat: { R_sys: [1.15, 1.8], E_es_ao: [1.0, 1.5] }, vol: [0, 0, 0], ok: v => v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90 },
-    { id: "ic_fe_reducida", nombre: "Insuficiencia cardíaca con FE reducida", pat: { E_es_lvf: [0.3, 0.5], R_sys: [1.0, 1.3] }, grav: ["E_es_lvf", "min"], vol: [900, 1300, 400], vd: true, ok: v => v.FE_pct <= 40 && v.PAS_mmHg >= 90 },
-    { id: "ic_fe_conservada", nombre: "Insuficiencia cardíaca con FE conservada", pat: { lambda_lvf: [1.3, 2.0], P_0_lvf: [1.0, 2.0], R_sys: [1.1, 1.4], E_es_ao: [1.0, 1.4] }, grav: ["lambda_lvf", "max"], vol: [900, 1300, 800], vd: true, ok: v => v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90 },
+    { id: "ic_fe_reducida", nombre: "Insuficiencia cardíaca con FE reducida", pat: { E_es_lvf: [0.3, 0.5], R_sys: [1.0, 1.3] }, grav: ["E_es_lvf", "min"], vol: [900, 1300, 400], vd: true, paiMax: 35, ok: v => v.FE_pct <= 40 && v.PAS_mmHg >= 90 },
+    { id: "ic_fe_conservada", nombre: "Insuficiencia cardíaca con FE conservada", pat: { lambda_lvf: [1.3, 2.0], P_0_lvf: [1.0, 2.0], R_sys: [1.1, 1.4], E_es_ao: [1.0, 1.4] }, grav: ["lambda_lvf", "max"], vol: [900, 1300, 800], vd: true, paiMax: 35, ok: v => v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90 },
     { id: "ic_derecha", nombre: "Insuficiencia cardíaca derecha", pat: { E_es_rvf: [0.3, 0.6] }, vol: [100, 500, 0], ok: v => v.PVC_mmHg > U.PVC_p95 && v.IC_Lmin_m2 < icMed(v) },
     { id: "hipertension_pulmonar", nombre: "Hipertensión pulmonar", pat: { R_pul: [2.0, 4.0] }, vol: [0, 0, 0], ok: v => v.PAPm_mmHg > 20 },
     { id: "estenosis_aortica", nombre: "Estenosis aórtica", pat: { R_av: [3.0, 15.0], E_es_lvf: [1.0, 1.3], lambda_lvf: [1.0, 1.4] }, vol: [0, 0, 0], ok: v => v.Grad_Ao_medio_mmHg >= 20 },
@@ -816,10 +818,10 @@ self.onmessage = function (ev) {
     { id: "shock_distributivo", nombre: "Shock distributivo", pat: { R_sys: [0.28, 0.48] }, vol: [0, 0, 0], fcExtra: 25, ok: v => v.PAM_mmHg < 65 && v.IC_Lmin_m2 >= icMed(v) },
     { id: "hemorragia_compensada", nombre: "Hemorragia compensada", pat: {}, vol: [0, 0, 0], perdida: [0.10, 0.25], ok: v => v.PAS_mmHg >= 90 && v.PAI_mmHg < U.PAI_p5 },
     { id: "shock_hemorragico", nombre: "Shock hemorrágico", pat: {}, vol: [0, 0, 0], perdida: [0.28, 0.36], ok: v => v.PAS_mmHg < 90 },
-    { id: "hta_icfep", nombre: "Hipertensión + IC con FE conservada", pat: { R_sys: [1.3, 1.8], E_es_ao: [1.0, 1.5], lambda_lvf: [1.3, 2.0], P_0_lvf: [1.0, 2.0], E_es_lvf: [1.0, 1.3] }, grav: ["lambda_lvf", "max"], vol: [1100, 1500, 800], vd: true, ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90 },
+    { id: "hta_icfep", nombre: "Hipertensión + IC con FE conservada", pat: { R_sys: [1.3, 1.8], E_es_ao: [1.0, 1.5], lambda_lvf: [1.3, 2.0], P_0_lvf: [1.0, 2.0], E_es_lvf: [1.0, 1.3] }, grav: ["lambda_lvf", "max"], vol: [1100, 1500, 800], vd: true, paiMax: 35, ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90 },
     { id: "hta_estenosis_aortica", nombre: "Hipertensión + estenosis aórtica", pat: { R_sys: [1.3, 1.8], E_es_ao: [1.0, 1.5], R_av: [3.0, 15.0], E_es_lvf: [1.0, 1.3], lambda_lvf: [1.0, 1.4] }, vol: [0, 0, 0], ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.Grad_Ao_medio_mmHg >= 20 },
-    { id: "hta_icfer", nombre: "Hipertensión + IC con FE reducida", pat: { R_sys: [1.8, 2.6], E_es_ao: [1.0, 1.5], E_es_lvf: [0.3, 0.5] }, grav: ["E_es_lvf", "min"], vol: [1100, 1500, 400], vd: true, ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.FE_pct <= 40 && v.PAS_mmHg >= 90 },
-    { id: "ic_biventricular", nombre: "Insuficiencia cardíaca biventricular", pat: { E_es_lvf: [0.3, 0.5], E_es_rvf: [0.3, 0.6], R_sys: [1.1, 1.5] }, grav: ["E_es_lvf", "min"], vol: [500, 900, 400], ok: v => v.FE_pct <= 40 && v.PAS_mmHg >= 90 && v.PVC_mmHg > U.PVC_p95 && v.IC_Lmin_m2 < icMed(v) },
+    { id: "hta_icfer", nombre: "Hipertensión + IC con FE reducida", pat: { R_sys: [1.8, 2.6], E_es_ao: [1.0, 1.5], E_es_lvf: [0.3, 0.5] }, grav: ["E_es_lvf", "min"], vol: [1100, 1500, 400], vd: true, paiMax: 35, ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.FE_pct <= 40 && v.PAS_mmHg >= 90 },
+    { id: "ic_biventricular", nombre: "Insuficiencia cardíaca biventricular", pat: { E_es_lvf: [0.3, 0.5], E_es_rvf: [0.3, 0.6], R_sys: [1.1, 1.5] }, grav: ["E_es_lvf", "min"], vol: [500, 900, 400], paiMax: 35, ok: v => v.FE_pct <= 40 && v.PAS_mmHg >= 90 && v.PVC_mmHg > U.PVC_p95 && v.IC_Lmin_m2 < icMed(v) },
   ];
 
   // deslizadores del modo "Crear paciente"
@@ -1404,8 +1406,8 @@ self.onmessage = function (ev) {
         $("estado-sim").textContent = `Simulando paciente… (intento ${intento})`;
         pac = pacienteAleatorio(coh, conPerfil);
         r = await simularPaciente(pac);
-      } while (exigir && !coh.ok(r.clinicas) && intento < 25);
-      const cumple = coh.ok(r.clinicas);
+      } while (exigir && !aceptable(coh, r.clinicas) && intento < 25);
+      const cumple = aceptable(coh, r.clinicas);
       $("titulo-paciente").textContent = coh.nombre;
       $("meta-paciente").textContent = `paciente aleatorio · ${intento} ${intento === 1 ? "intento" : "intentos"} · ${fmt((performance.now() - t0) / 1000, 1)} s`;
       $("estado-sim").textContent = exigir && !cumple ? "No se encontró un paciente que cumpla los criterios en 25 intentos; se muestra el último." : (pac.perdida > 0 ? `Hemorragia del ${fmt(100 * pac.perdida, 0)} % simulada: reposo, calibración del reflejo y 2 minutos después.` : pac.antes ? "Shock agudo simulado: reposo antes del shock, calibración del reflejo y 2 minutos después." : "Simulación completada: 60 s, valores de los 5 últimos latidos.");
@@ -1491,6 +1493,7 @@ self.onmessage = function (ev) {
     if (c.vd) pat.push("ventrículo derecho afectado en 1 de cada 3 pacientes");
     if (c.agudo) pat.push("shock agudo, con barorreflejo");
     if (c.fcExtra) pat.push(`frecuencia cardíaca de base +${c.fcExtra} lpm`);
+    if (c.paiMax) pat.push(`IC estable: se descartan los pacientes con presión de enclavamiento > ${c.paiMax} mmHg`);
     $("nota-cohorte").textContent = (pat.length ? "Patología: " + pat.join("; ") + ". " : "") + "Cada persona varía ±20 % alrededor de los valores normales.";
   }
   $("sel-cohorte").addEventListener("change", notaCohorte);
