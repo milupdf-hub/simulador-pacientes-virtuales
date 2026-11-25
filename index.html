@@ -1,0 +1,1560 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador de pacientes virtuales</title>
+<meta name="description" content="Simulador del sistema cardiovascular (modelo de Smith 2004 con el barorreflejo de Ursino 1998): genera pacientes virtuales sanos y enfermos y muestra su circulación latido a latido.">
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Concepto: puesto de monitorización junto a la cama. A la izquierda, la "consola" donde se
+   define el paciente; a la derecha, la pantalla del monitor con sus parámetros y ondas. */
+:root {
+  --bg: #f3f6f8; --surface: #ffffff; --surface-2: #eaf0f3; --line: #d7e0e6; --line-2: #c2cdd5;
+  --ink: #0e1820; --ink-2: #44525e; --muted: #707d89;
+  --accent: #0b6b88; --accent-ink: #ffffff; --accent-soft: #dcecf1;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --sgrid: #e3e8ec; --saxis: #b8c3cb;
+  --ok: #0a7a0a; --ok-bg: #e2f3e2; --warn: #8a5a00; --warn-bg: #fdf0d2; --crit: #b42e2e; --crit-bg: #fae3e3;
+  --f-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-cond: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 10px;
+  /* vista del paciente: sangre oxigenada / desoxigenada y figura */
+  --oxi: #c8453c; --oxi-soft: #f6dedb; --desoxi: #3567b0; --desoxi-soft: #dde7f5;
+  --figura: #b4c9d3; --figura-2: #7e98a5; --suelo: #c9d4db; --figura-palida: #d3dbe6;
+  --pelo: #5b4636; --pelo-joven: #3b2a1f; --pelo-canoso: #c3c7cb;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --oxi: #e5716a; --oxi-soft: #3a1d1c; --desoxi: #6f9be0; --desoxi-soft: #18263a;
+  --figura: #36505c; --figura-2: #587582; --suelo: #34424c; --figura-palida: #4c5866;
+  --pelo: #6b5442; --pelo-joven: #4a3628; --pelo-canoso: #9aa1a7;
+  --bg: #0d1317; --surface: #141c22; --surface-2: #1b252c; --line: #26323b; --line-2: #34424c;
+  --ink: #e7edf1; --ink-2: #b2bec7; --muted: #7e8b95;
+  --accent: #4fb2d0; --accent-ink: #06222c; --accent-soft: #163541;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --sgrid: #212b33; --saxis: #3a4751;
+  --ok: #3fbf3f; --ok-bg: #12301a; --warn: #f0b13a; --warn-bg: #3a2c0c; --crit: #f07575; --crit-bg: #3d1717;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --oxi: #e5716a; --oxi-soft: #3a1d1c; --desoxi: #6f9be0; --desoxi-soft: #18263a;
+  --figura: #36505c; --figura-2: #587582; --suelo: #34424c; --figura-palida: #4c5866;
+  --pelo: #6b5442; --pelo-joven: #4a3628; --pelo-canoso: #9aa1a7;
+  --bg: #0d1317; --surface: #141c22; --surface-2: #1b252c; --line: #26323b; --line-2: #34424c;
+  --ink: #e7edf1; --ink-2: #b2bec7; --muted: #7e8b95;
+  --accent: #4fb2d0; --accent-ink: #06222c; --accent-soft: #163541;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --sgrid: #212b33; --saxis: #3a4751;
+  --ok: #3fbf3f; --ok-bg: #12301a; --warn: #f0b13a; --warn-bg: #3a2c0c; --crit: #f07575; --crit-bg: #3d1717;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-sans); font-size: 15px; line-height: 1.5; }
+.envoltura { max-width: 1320px; margin: 0 auto; padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.cabecera { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; margin-bottom: 20px; }
+.cabecera h1 { font-family: var(--f-cond); font-weight: 600; font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.3rem); letter-spacing: -0.01em; }
+.cabecera p { margin: 4px 0 0; color: var(--ink-2); max-width: 62ch; }
+.sello { font-family: var(--f-mono); font-size: 12px; color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 4px 12px; max-width: 100%; }
+
+.app { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+/* --------------------------------------------------------- consola */
+.consola { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 16px; }
+.pestanas { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface-2); border-radius: 8px; padding: 3px; gap: 3px; }
+.pestanas button { font: 500 14px var(--f-sans); border: 0; border-radius: 6px; padding: 8px 6px; background: transparent; color: var(--ink-2); cursor: pointer; }
+.pestanas button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.etiqueta { font: 600 11px var(--f-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.grupo { display: grid; gap: 10px; }
+.grupo h3 { font: 600 12px var(--f-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+.grupo:first-child h3 { border-top: 0; padding-top: 0; }
+select, .boton, .boton-sec { font: 500 14px var(--f-sans); }
+select { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); }
+.casilla { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--ink-2); }
+.casilla input { margin-top: 3px; accent-color: var(--accent); }
+.deslizador { display: grid; gap: 2px; }
+.deslizador .fila { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.deslizador label { font-size: 14px; }
+.deslizador output { font: 500 13px var(--f-mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.deslizador small { color: var(--muted); font-size: 12px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+.boton { width: 100%; border: 0; border-radius: 8px; padding: 12px; background: var(--accent); color: var(--accent-ink); cursor: pointer; font-weight: 600; }
+.boton:disabled { opacity: .6; cursor: progress; }
+.boton-sec { border: 1px solid var(--line-2); background: transparent; color: var(--ink); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.progreso { height: 4px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.progreso div { height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+.nota { font-size: 12.5px; color: var(--muted); margin: 0; }
+.segmento { display: flex; gap: 6px; flex-wrap: wrap; }
+.segmento label { flex: 1; min-width: 120px; border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 14px; }
+.segmento input { accent-color: var(--accent); }
+.segmento label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+
+/* --------------------------------------------------------- monitor */
+.monitor { display: grid; gap: 16px; min-width: 0; }
+.ficha { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: baseline; }
+.ficha h2 { font: 600 1.25rem var(--f-cond); }
+.ficha .meta { font: 13px var(--f-mono); color: var(--muted); }
+.perfil-linea { flex-basis: 100%; margin: 0; font-size: 14px; color: var(--ink-2); }
+tbody th { padding-top: 14px; }
+.nota b { color: var(--ink); font-weight: 600; }
+.parametros { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+.param { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px 12px; display: grid; gap: 2px; min-width: 0; }
+.param .nombre { font: 600 11px var(--f-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; min-height: 30px; }
+.param .valor { font: 500 1.65rem/1.15 var(--f-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+@media (max-width: 600px) { .parametros { grid-template-columns: 1fr 1fr; } .param .valor { font-size: 1.3rem; } }
+.param .valor small { font-size: .55em; color: var(--ink-2); letter-spacing: 0; }
+.param .ref { font-size: 12px; color: var(--muted); }
+.estado { flex: none; line-height: 18px; font: 600 11px/18px var(--f-sans); border-radius: 999px; padding: 1px 7px; white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.estado.ok { color: var(--ok); background: var(--ok-bg); }
+.estado.alto, .estado.bajo { color: var(--warn); background: var(--warn-bg); }
+.estado.critico { color: var(--crit); background: var(--crit-bg); }
+.delta { font: 500 12px var(--f-mono); color: var(--ink-2); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 14px 10px; min-width: 0; }
+.panel header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.panel h3 { font: 600 14px var(--f-sans); }
+.panel .sub { font-size: 12.5px; color: var(--muted); }
+.graficas { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; }
+.graficas-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 720px) { .graficas, .graficas-2 { grid-template-columns: minmax(0, 1fr); } }
+.leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+.leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.grafica { position: relative; }
+.grafica svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.grafica text { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 8px; font: 12px var(--f-mono); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; }
+.tip b { font-weight: 600; }
+
+.dx { display: grid; gap: 8px; }
+.dx ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.dx li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.dx li.si { background: var(--crit-bg); }
+.dx li .icono { font: 600 13px var(--f-mono); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--line); color: var(--ink-2); }
+.dx li.si .icono { background: var(--crit); color: var(--surface); }
+.dx li strong { font-weight: 600; }
+.dx li span { display: block; font-size: 12.5px; color: var(--ink-2); }
+.tabla-env { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { font: 600 11px var(--f-cond); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
+details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+details p, details li { color: var(--ink-2); font-size: 13.5px; max-width: 75ch; }
+.pie { margin-top: 24px; font-size: 12.5px; color: var(--muted); }
+
+/* --------------------------------------------------------- vista del paciente */
+.vista { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 720px) { .vista { grid-template-columns: minmax(0, 1fr); } }
+.vista figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+.vista figcaption { display: grid; gap: 8px; }
+.vista .titulo-fig { font: 600 11px var(--f-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.persona svg { display: block; width: 100%; max-width: 240px; height: auto; margin: 0 auto; }
+.persona .linea-1 { font: 600 15px var(--f-sans); }
+.persona .linea-2 { font: 500 13px var(--f-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.imc { display: grid; gap: 3px; }
+.imc .pista { position: relative; display: grid; grid-template-columns: 14fr 26fr 20fr 40fr; height: 8px; border-radius: 99px; overflow: hidden; gap: 2px; }
+.imc .pista span { background: var(--surface-2); }
+.imc .pista span.actual { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.imc .marca { position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px; border-radius: 2px; background: var(--ink); }
+.imc .escala { display: grid; grid-template-columns: 14fr 26fr 20fr 40fr; font: 11px var(--f-mono); color: var(--muted); }
+.imc .escala span { text-align: left; }
+.factores { display: flex; flex-wrap: wrap; gap: 6px; }
+.factor { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 9px 2px 6px; color: var(--ink-2); }
+.factor svg { width: 14px; height: 14px; flex: none; }
+.factor.ninguno { border-style: dashed; }
+#fig-circuito { overflow-x: auto; }
+.circuito svg { display: block; width: 100%; min-width: 470px; height: auto; }
+.signos { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+.signos ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; color: var(--ink); }
+.signos li::marker { color: var(--warn); }
+.signos small { font-size: 11.5px; color: var(--muted); }
+.circuito text { font-family: var(--f-sans); fill: var(--ink-2); }
+.circuito .v { font-family: var(--f-mono); fill: var(--ink); font-weight: 500; }
+.circuito .n { font-family: var(--f-cond); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
+.circuito .pie-fig { font-size: 12.5px; color: var(--muted); margin: 0; }
+.flujo { stroke-dasharray: 2 13; stroke-linecap: round; animation: flujo var(--dur, 1.6s) linear infinite; }
+@keyframes flujo { to { stroke-dashoffset: -30; } }
+.late { transform-box: fill-box; transform-origin: center; animation: latido var(--latido, .8s) ease-out infinite; }
+@keyframes latido { 0%, 55%, 100% { transform: scale(1); } 12% { transform: scale(1.14); } 24% { transform: scale(.97); } }
+.vaciado { transform-box: fill-box; transform-origin: center; animation: vaciado var(--latido, .8s) ease-in-out infinite; }
+@keyframes vaciado { 0%, 100% { transform: scale(1); } 35% { transform: scale(var(--sistole, .8)); } 60% { transform: scale(1); } }
+
+/* regla de cada tarjeta: banda normal y posición del valor */
+.regla { position: relative; height: 6px; border-radius: 99px; background: var(--surface-2); margin: 6px 0 2px; }
+.regla .banda { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: var(--ok-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 35%, transparent); }
+.regla .punto { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid var(--surface); }
+.regla .punto.ok { background: var(--ok); } .regla .punto.alto, .regla .punto.bajo { background: var(--warn); } .regla .punto.critico { background: var(--crit); }
+@media (prefers-reduced-motion: reduce) { .progreso div { transition: none; } .flujo, .late, .vaciado { animation: none; } }
+</style>
+
+<div class="envoltura">
+  <header class="cabecera">
+    <div>
+      <h1>Simulador de pacientes virtuales</h1>
+      <p>Genera un paciente o defínelo tú, y observa su circulación latido a latido: tensión, gasto cardíaco, presiones de llenado y el bucle presión-volumen del ventrículo izquierdo.</p>
+    </div>
+    <span class="sello">Smith 2004 · barorreflejo de Ursino 1998 · modelo v5 + perfil del paciente (v6)</span>
+  </header>
+
+  <div class="app">
+    <!-- ================================================= CONSOLA -->
+    <aside class="consola" aria-label="Definición del paciente">
+      <div class="pestanas" role="tablist">
+        <button role="tab" id="tab-aleatorio" aria-selected="true" aria-controls="modo-aleatorio">Paciente aleatorio</button>
+        <button role="tab" id="tab-crear" aria-selected="false" aria-controls="modo-crear">Crear paciente</button>
+      </div>
+
+      <section id="modo-aleatorio" role="tabpanel" aria-labelledby="tab-aleatorio" class="grupo">
+        <label class="etiqueta" for="sel-cohorte">Enfermedad</label>
+        <select id="sel-cohorte"></select>
+        <label class="casilla"><input type="checkbox" id="chk-criterio" checked> Repetir hasta que el paciente cumpla los criterios clínicos de la enfermedad (como el generador de la base de datos)</label>
+        <label class="casilla"><input type="checkbox" id="chk-perfil" checked> Sortear también el perfil (sexo, edad, altura, peso, tabaco, diabetes). Sin marcar: hombre de 45 años, 1,75 m y 70 kg, como la base de datos v5</label>
+        <p class="nota" id="nota-cohorte"></p>
+        <button class="boton" id="btn-generar">Generar paciente</button>
+      </section>
+
+      <section id="modo-crear" role="tabpanel" aria-labelledby="tab-crear" class="grupo" hidden>
+        <div class="grupo">
+          <h3>Perfil del paciente</h3>
+          <div class="segmento" role="radiogroup" aria-label="Sexo">
+            <label><input type="radio" name="sexo" id="sexo-h" value="H" checked> Hombre</label>
+            <label><input type="radio" name="sexo" id="sexo-m" value="M"> Mujer</label>
+          </div>
+          <div id="deslizadores-perfil" class="grupo"></div>
+          <p class="nota" id="resumen-corporal"></p>
+          <label class="casilla"><input type="checkbox" id="chk-fumador"> Fuma (rigidez de la aorta ×1,21)</label>
+          <label class="casilla"><input type="checkbox" id="chk-diabetes"> Diabetes tipo 2 (ventrículo más rígido y algo más de volumen)</label>
+          <label class="etiqueta" for="sel-medicacion">Medicación</label>
+          <select id="sel-medicacion"></select>
+          <p class="nota" id="nota-medicacion"></p>
+        </div>
+        <div id="deslizadores" class="grupo"></div>
+        <div class="grupo">
+          <h3>Situación</h3>
+          <div class="segmento" role="radiogroup" aria-label="Situación">
+            <label><input type="radio" name="escenario" id="esc-reposo" value="reposo" checked> En reposo</label>
+            <label><input type="radio" name="escenario" id="esc-hemorragia" value="hemorragia"> Hemorragia aguda</label>
+          </div>
+          <div id="opciones-hemorragia" class="grupo" hidden>
+            <div class="deslizador">
+              <div class="fila"><label for="rng-perdida">Sangre perdida</label><output id="out-perdida"></output></div>
+              <input type="range" id="rng-perdida" min="5" max="40" step="1" value="20">
+              <small>Porcentaje de la sangre total del paciente (5,3 L en el adulto de referencia, ajustado a su tamaño). Clases ATLS: I &lt; 15 %, II 15–30 %, III 30–40 %, IV &gt; 40 %.</small>
+            </div>
+            <label class="casilla"><input type="checkbox" id="chk-reflejo" checked> Barorreflejo activo</label>
+          </div>
+        </div>
+        <div class="segmento">
+          <button class="boton-sec" id="btn-normal" type="button">Volver a valores normales</button>
+        </div>
+        <button class="boton" id="btn-simular">Simular</button>
+      </section>
+
+      <div class="progreso" aria-hidden="true"><div id="barra"></div></div>
+      <p class="nota" id="estado-sim" role="status">Preparando el modelo…</p>
+    </aside>
+
+    <!-- ================================================= MONITOR -->
+    <section class="monitor" aria-label="Resultados de la simulación">
+      <div class="ficha">
+        <h2 id="titulo-paciente">Paciente</h2>
+        <span class="meta" id="meta-paciente"></span>
+        <p class="perfil-linea" id="perfil-paciente"></p>
+      </div>
+
+      <div class="vista" id="vista">
+        <figure class="persona">
+          <span class="titulo-fig">El paciente, a escala</span>
+          <div id="fig-persona"></div>
+          <figcaption id="cap-persona"></figcaption>
+        </figure>
+        <figure class="circuito">
+          <span class="titulo-fig">Su circulación</span>
+          <div id="fig-circuito"></div>
+          <p class="pie-fig">Rojo: sangre oxigenada · azul: sin oxígeno. El grosor del flujo sigue al gasto cardíaco y el corazón late a su frecuencia. Punto verde: normal; ámbar: fuera de lo normal; rojo: grave.</p>
+        </figure>
+      </div>
+
+      <div class="parametros" id="parametros"></div>
+
+      <div class="graficas">
+        <article class="panel">
+          <header><h3>Presiones en el corazón izquierdo</h3><span class="sub">últimos 3 latidos · mmHg</span></header>
+          <div class="leyenda"><span><i style="background:var(--s2)"></i>Aorta</span><span><i style="background:var(--s1)"></i>Ventrículo izquierdo</span></div>
+          <div class="grafica" id="g-presion"></div>
+        </article>
+        <article class="panel">
+          <header><h3>Bucle presión-volumen</h3><span class="sub">ventrículo izquierdo, último latido</span></header>
+          <div class="grafica" id="g-pv"></div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <header><h3>Volumen del ventrículo izquierdo</h3><span class="sub">últimos 3 latidos · mL</span></header>
+        <div class="grafica" id="g-volumen"></div>
+      </article>
+
+      <div id="bloque-tendencia" hidden>
+        <div class="graficas-2">
+          <article class="panel">
+            <header><h3>Presión arterial media tras la hemorragia</h3><span class="sub">latido a latido · mmHg</span></header>
+            <div class="grafica" id="g-pam"></div>
+          </article>
+          <article class="panel">
+            <header><h3>Frecuencia cardíaca tras la hemorragia</h3><span class="sub">latido a latido · lpm</span></header>
+            <div class="grafica" id="g-fc"></div>
+          </article>
+        </div>
+      </div>
+
+      <article class="panel dx">
+        <header><h3>Criterios clínicos que cumple</h3><span class="sub">los mismos que usa el generador de la base de datos</span></header>
+        <ul id="lista-dx"></ul>
+        <p class="nota">Orientativo: criterios simplificados (guías ESC, clasificación ATLS) aplicados a un modelo. No es un diagnóstico clínico.</p>
+      </article>
+
+      <article class="panel">
+        <header><h3>Parámetros del paciente</h3><span class="sub">valor del modelo y relación con el paciente nominal</span></header>
+        <div class="tabla-env"><table id="tabla-param"></table></div>
+        <div class="segmento" style="margin-top:10px"><button class="boton-sec" id="btn-editar" type="button">Editar este paciente en «Crear paciente»</button></div>
+      </article>
+
+      <details class="panel">
+        <summary>Sobre el modelo</summary>
+        <p>Modelo hemodinámico mínimo de Smith, Chase, Nokes, Shaw y Wake (2004): dos ventrículos con interacción a través del septo, pericardio, aorta, vena cava, arteria y vena pulmonares y cuatro válvulas. La versión v5 de este proyecto añade el barorreflejo carotídeo de Ursino (1998), una sístole que se acorta al subir la frecuencia y presiones de llenado realistas.</p>
+        <ul>
+          <li>Integración con Runge-Kutta de 4.º orden, paso de 1 ms, en tu navegador. Enfermedades crónicas: 60 s con el barorreflejo en reposo. Hemorragia: 30 s de reposo, 40 s de calibración del reflejo y 120 s tras la pérdida de sangre. El shock cardiogénico, que es agudo, se simula igual: reposo de la persona antes del shock, calibración y 120 s con la enfermedad.</li>
+          <li>Validación: 160 pacientes de la base de datos v5 simulados aquí dan los mismos valores que OpenCOR (diferencia máxima de 0,08 mmHg en la tensión y 0,04 lpm en la FC).</li>
+          <li>Perfil del paciente (secciones 8.5–8.8 de las referencias del proyecto): la edad cambia la resistencia sistémica y la rigidez de la aorta, calibradas para reproducir la tensión por edad del estudio de Framingham (Franklin 1997); el tabaco aumenta la rigidez aórtica un 21 % (Saz-Lara 2021); el tamaño (altura, peso y sexo, fórmula de Nadler) escala volúmenes, rigideces y resistencias de todo el sistema; la diabetes tipo 2 aumenta la presión de llenado 2,5 mmHg (Zoppini 2018, Nagueh 1997); los medicamentos reproducen el efecto medio de los ensayos (Law 2003, McAlister 2009, Beregovich 1975).</li>
+          <li>En el modo aleatorio, el perfil se sortea como en la población española, con la edad y el sexo propios de cada enfermedad: sano e hipertensión según el INE 2025 y la prevalencia de hipertensión por edad y sexo (Di@bet.es); el resto, con la edad media y el % de mujeres de registros clínicos (30–79 años). Altura según el año de nacimiento (desviación típica de Carrascosa 2008), IMC calibrado con la Encuesta de Salud de España 2023, tabaco (ESdE 2023) y diabetes por edad y sexo (Di@bet.es), más frecuente con sobrepeso y obesidad (odds ratio 1,9 y 4,6).</li>
+          <li>El gasto cardíaco se valora como índice cardíaco (gasto / superficie corporal), porque depende del tamaño del paciente. Los umbrales relativos son los de los sanos de la base de datos v6: percentiles de la presión auricular y venosa, y mediana del índice cardíaco de los sanos del mismo sexo (2,8 L/min/m² en hombres y 2,5 en mujeres), porque en el modelo el índice de las mujeres sanas es más bajo.</li>
+          <li>Limitaciones: barorreflejo solo carotídeo y de los primeros minutos (la FC sube menos que en la clínica); sin aurículas ni insuficiencias valvulares; con pérdidas de sangre ≥ 40 % el modelo colapsa.</li>
+        </ul>
+      </details>
+    </section>
+  </div>
+  <p class="pie">Proyecto de prácticas de Miloud Slimani (ILIS, Université de Lille) en el instituto DaSCI, Universidad de Granada, 2026. Datos sintéticos: no corresponden a personas reales. Herramienta docente y de investigación: no sirve para diagnosticar ni tratar a pacientes.</p>
+</div>
+
+<script type="text/plain" id="codigo-modelo">/*
+ * modelo_v5.js — Modelo hemodinámico de Smith et al. (2004), versión v5 del proyecto:
+ *   + barorreflejo carotídeo de Ursino (1998, Eqs. 30-42, Tabla 3)
+ *   + sístole que se acorta con la FC (Ursino 1998, Eq. 22)
+ *   + presiones de llenado realistas y volumen tensionado de 1860 mL.
+ * Traducción directa de modelo/smith_v5.cellml (mismas ecuaciones, RK4 con paso 0,001 s,
+ * septo resuelto con Newton). Presiones en mmHg, volúmenes en mL, flujos en mL/s.
+ * Funciona en el navegador (Web Worker) y en Node (validación).
+ */
+(function (raiz) {
+  "use strict";
+
+  // ------------------------------------------------------------- parámetros por defecto (v5)
+  const SMITH = {
+    R_mt: 0.0158, R_av: 0.018, R_tc: 0.0237, R_pv: 0.0055, R_pul: 0.0776, R_sys: 1.034455,
+    L_tc: 8.0093e-5, L_pv: 1.4868e-4, L_mt: 7.6968e-5, L_av: 1.2189e-4, P_th: -4.0,
+    A: 1.0, B: 80.0, C: 0.375, period: 0.75, sistole_fc: 1.0,
+    P_0_pcd: 0.5003, V_0_pcd: 200.0, lambda_pcd: 0.03,
+    E_es_lvf: 2.8798, P_0_lvf: 0.3609, lambda_lvf: 0.033,
+    E_es_rvf: 0.585, P_0_rvf: 0.4314, lambda_rvf: 0.023,
+    E_es_spt: 48.754, V_d_spt: 2.0, P_0_spt: 1.1101, lambda_spt: 0.435, V_0_spt: 2.0,
+    E_es_pa: 0.369, E_es_pu: 0.0146, E_es_ao: 0.6913, E_es_vc: 0.00944,
+  };
+  const URSINO = {
+    P_n: 100.27520815852998, k_a: 11.758, f_min: 2.52, f_max: 47.78, tau_z: 6.37, tau_p: 2.076,
+    f_es_inf: 2.10, f_es_0: 16.11, k_es: 0.0675, f_es_min: 2.66,
+    f_ev_0: 3.2, f_ev_inf: 6.3, k_ev: 7.06, f_cs_0: 25.0,
+    G_Elv: 0.475, tau_Elv: 8.0, D_E: 2.0, Elv_0: 2.392,
+    G_Erv: 0.282, tau_Erv: 8.0, Erv_0: 1.412,
+    G_Rsp: 0.695, tau_Rsp: 6.0, Rsp_0: 2.49,
+    G_Rep: 0.53, tau_Rep: 6.0, Rep_0: 0.78,
+    G_Vusv: -265.4, tau_Vusv: 20.0, D_V: 5.0, Vusv_0: 1435.4,
+    G_Vuev: -132.5, tau_Vuev: 20.0, Vuev_0: 1537.0,
+    G_Ts: -0.13, tau_Ts: 2.0, T_0: 0.58,
+    G_Tv: 0.09, tau_Tv: 1.5, D_Tv: 0.2,
+    R_sa: 0.06, R_sv: 0.038, R_ev: 0.016,
+    on_E: 1.0, on_R: 1.0, on_V: 1.0, on_T: 1.0,
+    Elv_ref: 3.1878245711905393, Erv_ref: 1.8844684822646989, Rtot_ref: 1.216505817164207,
+    Vu_ref: 2305.8061267418234, T_ref: 0.7867914491285195,
+  };
+  // estado inicial del CellML v5 (paciente nominal en reposo, reflejo calibrado)
+  const NOMBRES = ["V_lv", "V_rv", "V_pa", "V_pu", "V_ao", "V_vc", "Q_mt", "Q_av", "Q_tc", "Q_pv",
+    "phi", "P_t", "z_es2", "z_es5", "z_ev", "d_Elv", "d_Erv", "d_Rsp", "d_Rep", "d_Vusv", "d_Vuev", "d_Ts", "d_Tv"];
+  const ESTADO_INICIAL = [115.14314746995741, 104.73131584365821, 45.44587015722977, 921.6876240028082,
+    136.42999706183525, 536.5620454645419, 37.36766090264637, -2.426705611930768, 151.01716709330995,
+    -0.18468616476975175, 0.0, 99.24788546997625, 7.007982872519855, 7.003902184054309, 4.704331846206601,
+    0.7958245711905392, 0.472468482264699, 1.1643749890208797, 0.8879406391094475, -444.6192861591358,
+    -221.9745870990408, -0.21781941279818887, 0.4246108619267083];
+  const N_EST = NOMBRES.length;
+  const I_VOL = [0, 1, 2, 3, 4, 5];
+
+  function sigma(G, f, u) {
+    return f >= u.f_es_min ? G * Math.log(f - u.f_es_min + 1) : 0.0;
+  }
+
+  /* Derivadas. y: estado (23), dy: salida, aux: variables algebraicas (se rellena si se pasa). */
+  function crearModelo(p, u) {
+    let vSpt = 3.12;
+    const tsysRef = 0.5 - 0.075 / 0.75;
+
+    function derivadas(y, dy, aux) {
+      const V_lv = y[0], V_rv = y[1], V_pa = y[2], V_pu = y[3], V_ao = y[4], V_vc = y[5];
+      const Q_mt = y[6], Q_av = y[7], Q_tc = y[8], Q_pv = y[9];
+      const phi = y[10], P_t = y[11], z2 = y[12], z5 = y[13], zv = y[14];
+      const dElv = y[15], dErv = y[16], dRsp = y[17], dRep = y[18], dVusv = y[19], dVuev = y[20], dTs = y[21], dTv = y[22];
+
+      // efectores -> factores relativos
+      const Rtot = u.R_sa + 1 / (1 / (u.Rsp_0 + dRsp + u.R_sv) + 1 / (u.Rep_0 + dRep + u.R_ev));
+      const k_R = 1 + u.on_R * (Rtot / u.Rtot_ref - 1);
+      const k_Elv = 1 + u.on_E * ((u.Elv_0 + dElv) / u.Elv_ref - 1);
+      const k_Erv = 1 + u.on_E * ((u.Erv_0 + dErv) / u.Erv_ref - 1);
+      const T = p.period * (1 + u.on_T * ((u.T_0 + dTs + dTv) / u.T_ref - 1));
+      const dVu = u.on_V * (u.Vusv_0 + dVusv + u.Vuev_0 + dVuev - u.Vu_ref);
+
+      // activación cardíaca
+      const esc = tsysRef / (0.5 - 0.075 / T);
+      const B_ef = p.B * (1 + p.sistole_fc * (esc * esc - 1));
+      const tau = (phi - Math.floor(phi)) * T;
+      const x = tau - p.C * T / p.period;
+      const e = p.A * Math.exp(-B_ef * x * x);
+
+      const E_lv = p.E_es_lvf * k_Elv, E_rv = p.E_es_rvf * k_Erv;
+      // septo (ecuación implícita) con Newton
+      let s = vSpt;
+      for (let it = 0; it < 30; it++) {
+        const a = Math.exp(p.lambda_spt * (s - p.V_0_spt));
+        const b = Math.exp(p.lambda_lvf * (V_lv - s));
+        const c = Math.exp(p.lambda_rvf * (V_rv + s));
+        const f = e * p.E_es_spt * (s - p.V_d_spt) + (1 - e) * p.P_0_spt * (a - 1)
+          - e * E_lv * (V_lv - s) - (1 - e) * p.P_0_lvf * (b - 1)
+          + e * E_rv * (V_rv + s) + (1 - e) * p.P_0_rvf * (c - 1);
+        const df = e * p.E_es_spt + (1 - e) * p.P_0_spt * p.lambda_spt * a
+          + e * E_lv + (1 - e) * p.P_0_lvf * p.lambda_lvf * b
+          + e * E_rv + (1 - e) * p.P_0_rvf * p.lambda_rvf * c;
+        const paso = f / df;
+        s -= paso;
+        if (Math.abs(paso) < 1e-10) break;
+      }
+      vSpt = s;
+
+      const P_peri = p.P_0_pcd * (Math.exp(p.lambda_pcd * (V_lv + V_rv - p.V_0_pcd)) - 1) + p.P_th;
+      const V_lvf = V_lv - s, V_rvf = V_rv + s;
+      const P_lv = e * E_lv * V_lvf + (1 - e) * p.P_0_lvf * (Math.exp(p.lambda_lvf * V_lvf) - 1) + P_peri;
+      const P_rv = e * E_rv * V_rvf + (1 - e) * p.P_0_rvf * (Math.exp(p.lambda_rvf * V_rvf) - 1) + P_peri;
+      const P_pa = p.E_es_pa * V_pa + p.P_th;
+      const P_pu = p.E_es_pu * V_pu + p.P_th;
+      const P_ao = p.E_es_ao * V_ao;
+      const P_vc = p.E_es_vc * (V_vc - dVu);
+      const Q_sys = (P_ao - P_vc) / (p.R_sys * k_R);
+      const Q_pul = (P_pa - P_pu) / p.R_pul;
+      const mt = Q_mt > 0 ? Q_mt : 0, av = Q_av > 0 ? Q_av : 0, tc = Q_tc > 0 ? Q_tc : 0, pv = Q_pv > 0 ? Q_pv : 0;
+
+      dy[0] = mt - av;
+      dy[1] = tc - pv;
+      dy[2] = pv - Q_pul;
+      dy[3] = Q_pul - mt;
+      dy[4] = av - Q_sys;
+      dy[5] = Q_sys - tc;
+      let dP = P_pu - P_lv; dy[6] = (dP < 0 && Q_mt < 0) ? 0 : (dP - Q_mt * p.R_mt) / p.L_mt;
+      dP = P_lv - P_ao; dy[7] = (dP < 0 && Q_av < 0) ? 0 : (dP - Q_av * p.R_av) / p.L_av;
+      dP = P_vc - P_rv; dy[8] = (dP < 0 && Q_tc < 0) ? 0 : (dP - Q_tc * p.R_tc) / p.L_tc;
+      dP = P_rv - P_pa; dy[9] = (dP < 0 && Q_pv < 0) ? 0 : (dP - Q_pv * p.R_pv) / p.L_pv;
+
+      // barorreflejo (Ursino 1998)
+      const xa = Math.exp((P_t - u.P_n) / u.k_a);
+      const fcs = (u.f_min + u.f_max * xa) / (1 + xa);
+      const fes = u.f_es_inf + (u.f_es_0 - u.f_es_inf) * Math.exp(-u.k_es * fcs);
+      const xv = Math.exp((fcs - u.f_cs_0) / u.k_ev);
+      const fev = (u.f_ev_0 + u.f_ev_inf * xv) / (1 + xv);
+      dy[10] = 1 / T;
+      dy[11] = (P_ao + u.tau_z * p.E_es_ao * dy[4] - P_t) / u.tau_p;
+      dy[12] = (fes - z2) / u.D_E;
+      dy[13] = (fes - z5) / u.D_V;
+      dy[14] = (fev - zv) / u.D_Tv;
+      dy[15] = (sigma(u.G_Elv, z2, u) - dElv) / u.tau_Elv;
+      dy[16] = (sigma(u.G_Erv, z2, u) - dErv) / u.tau_Erv;
+      dy[17] = (sigma(u.G_Rsp, z2, u) - dRsp) / u.tau_Rsp;
+      dy[18] = (sigma(u.G_Rep, z2, u) - dRep) / u.tau_Rep;
+      dy[19] = (sigma(u.G_Vusv, z5, u) - dVusv) / u.tau_Vusv;
+      dy[20] = (sigma(u.G_Vuev, z5, u) - dVuev) / u.tau_Vuev;
+      dy[21] = (sigma(u.G_Ts, z2, u) - dTs) / u.tau_Ts;
+      dy[22] = (u.G_Tv * zv - dTv) / u.tau_Tv;
+
+      if (aux) {
+        aux.P_ao = P_ao; aux.P_lv = P_lv; aux.P_vc = P_vc; aux.P_pu = P_pu; aux.P_pa = P_pa;
+        aux.T = T; aux.k_R = k_R; aux.dVu = dVu;
+      }
+    }
+    return derivadas;
+  }
+
+  /*
+   * Simula `segundos` con RK4 (dt = 0,001 s) a partir del estado y0.
+   * Guarda en series (Float64Array) las variables necesarias cada `cada` pasos, desde el instante `guardarDesde`.
+   * Devuelve { y: estado final, t, P_ao, P_lv, V_lv, P_vc, P_pu, P_pa, Q_av, Q_mt, phi, T, dVu, k_R, medias }.
+   */
+  function simular(p, u, y0, segundos, opciones) {
+    const op = opciones || {};
+    const dt = 0.001;
+    const pasos = Math.round(segundos / dt);
+    const cada = op.cada || 1;
+    const desde = Math.round((op.guardarDesde || 0) / dt);
+    const nGuardar = Math.floor((pasos - desde) / cada) + 1;
+    const nombresSerie = ["P_ao", "P_lv", "V_lv", "P_vc", "P_pu", "P_pa", "Q_av", "Q_mt", "phi", "T", "dVu", "k_R"];
+    const serie = {};
+    for (const k of nombresSerie) serie[k] = new Float64Array(nGuardar);
+    const tSerie = new Float64Array(nGuardar);
+    // medias de los estados del reflejo en los últimos `promediar` segundos (calibración)
+    const nProm = op.promediar ? Math.round(op.promediar / dt) : 0;
+    const sumas = new Float64Array(N_EST);
+    let nSumas = 0;
+
+    const der = crearModelo(p, u);
+    let y = Float64Array.from(y0);
+    const k1 = new Float64Array(N_EST), k2 = new Float64Array(N_EST), k3 = new Float64Array(N_EST), k4 = new Float64Array(N_EST);
+    const tmp = new Float64Array(N_EST);
+    const aux = {};
+    let g = 0;
+    for (let i = 0; i <= pasos; i++) {
+      if (i >= desde && (i - desde) % cada === 0) {
+        der(y, k1, aux);
+        tSerie[g] = i * dt;
+        serie.P_ao[g] = aux.P_ao; serie.P_lv[g] = aux.P_lv; serie.V_lv[g] = y[0];
+        serie.P_vc[g] = aux.P_vc; serie.P_pu[g] = aux.P_pu; serie.P_pa[g] = aux.P_pa;
+        serie.Q_av[g] = y[7]; serie.Q_mt[g] = y[6]; serie.phi[g] = y[10];
+        serie.T[g] = aux.T; serie.dVu[g] = aux.dVu; serie.k_R[g] = aux.k_R;
+        g++;
+      }
+      if (nProm && i > pasos - nProm) { for (let j = 0; j < N_EST; j++) sumas[j] += y[j]; nSumas++; }
+      if (i === pasos) break;
+      der(y, k1, null);
+      for (let j = 0; j < N_EST; j++) tmp[j] = y[j] + dt / 2 * k1[j];
+      der(tmp, k2, null);
+      for (let j = 0; j < N_EST; j++) tmp[j] = y[j] + dt / 2 * k2[j];
+      der(tmp, k3, null);
+      for (let j = 0; j < N_EST; j++) tmp[j] = y[j] + dt * k3[j];
+      der(tmp, k4, null);
+      for (let j = 0; j < N_EST; j++) y[j] = y[j] + dt / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j]);
+      if (op.alProgreso && i % 5000 === 0) op.alProgreso(i / pasos);
+    }
+    const medias = nSumas ? Array.from(sumas, v => v / nSumas) : null;
+    return { y, t: tSerie, ...serie, medias, dt: dt * cada };
+  }
+
+  // volumen: positivo -> se añade a la vena cava; negativo -> se quita de los 6 compartimentos en proporción
+  function aplicarVolumen(y, extra) {
+    const z = Float64Array.from(y);
+    if (extra >= 0) { z[5] += extra; return z; }
+    let total = 0;
+    for (const i of I_VOL) total += z[i];
+    const escala = (total + extra) / total;
+    for (const i of I_VOL) z[i] *= escala;
+    return z;
+  }
+
+  /* Variables clínicas sobre los últimos `nLat` latidos completos (como los generadores). */
+  function variablesClinicas(r, nLat) {
+    nLat = nLat || 5;
+    const n = r.P_ao.length, dt = r.dt;
+    const lat = new Int32Array(n);
+    for (let i = 0; i < n; i++) lat[i] = Math.floor(r.phi[i]);
+    const ultimo = lat[n - 1] - 1;
+    const primeros = ultimo - nLat + 1;
+    const L = [];
+    for (let k = primeros; k <= ultimo; k++) L.push({ k, a: -1, b: -1 });
+    for (let i = 0; i < n; i++) {
+      const j = lat[i] - primeros;
+      if (j >= 0 && j < nLat) { if (L[j].a < 0) L[j].a = i; L[j].b = i; }
+    }
+    const res = { PAS: [], PAD: [], PAM: [], EDV: [], ESV: [], VS: [], FE: [], FC: [], GCl: [], PVC: [], PAPs: [], PAPd: [], PAPm: [], PAI: [], GAo: [], GMi: [] };
+    for (const { a, b } of L) {
+      if (a < 0) continue;
+      let pasMax = -1e9, padMin = 1e9, sAo = 0, vMax = -1e9, vMin = 1e9, sVc = 0, paMax = -1e9, paMin = 1e9, sPa = 0, sPu = 0;
+      let gAo = 0, nAo = 0, gMi = 0, nMi = 0;
+      for (let i = a; i <= b; i++) {
+        const pao = r.P_ao[i];
+        if (pao > pasMax) pasMax = pao; if (pao < padMin) padMin = pao; sAo += pao;
+        const v = r.V_lv[i]; if (v > vMax) vMax = v; if (v < vMin) vMin = v;
+        sVc += r.P_vc[i]; sPu += r.P_pu[i];
+        const pa = r.P_pa[i]; if (pa > paMax) paMax = pa; if (pa < paMin) paMin = pa; sPa += pa;
+        if (r.Q_av[i] > 1) { gAo += r.P_lv[i] - pao; nAo++; }
+        if (r.Q_mt[i] > 1) { gMi += r.P_pu[i] - r.P_lv[i]; nMi++; }
+      }
+      const m = b - a + 1;
+      const vs = vMax - vMin, fc = 60 / (m * dt);
+      res.PAS.push(pasMax); res.PAD.push(padMin); res.PAM.push(sAo / m);
+      res.EDV.push(vMax); res.ESV.push(vMin); res.VS.push(vs); res.FE.push(100 * vs / vMax);
+      res.FC.push(fc); res.GCl.push(vs * fc / 1000); res.PVC.push(sVc / m);
+      res.PAPs.push(paMax); res.PAPd.push(paMin); res.PAPm.push(sPa / m); res.PAI.push(sPu / m);
+      res.GAo.push(nAo ? gAo / nAo : NaN); res.GMi.push(nMi ? gMi / nMi : NaN);
+    }
+    const media = a => a.reduce((s, x) => s + x, 0) / a.length;
+    return {
+      PAS_mmHg: media(res.PAS), PAD_mmHg: media(res.PAD), PAM_mmHg: media(res.PAM),
+      EDV_mL: media(res.EDV), ESV_mL: media(res.ESV), VS_mL: media(res.VS), FE_pct: media(res.FE),
+      FC_lpm: media(res.FC), GC_Lmin: media(res.GCl), PVC_mmHg: media(res.PVC),
+      PAPs_mmHg: media(res.PAPs), PAPd_mmHg: media(res.PAPd), PAPm_mmHg: media(res.PAPm), PAI_mmHg: media(res.PAI),
+      Grad_Ao_medio_mmHg: media(res.GAo), Grad_Mi_medio_mmHg: media(res.GMi),
+      var_PAS_mmHg: Math.max(...res.PAS) - Math.min(...res.PAS),
+      _latidos: L,
+    };
+  }
+
+  const APAGADO = { on_E: 0, on_R: 0, on_V: 0, on_T: 0 };
+
+  /*
+   * Paciente crónico: igual que generar_cohortes_v5.py (reflejo en reposo, 60 s).
+   * params: parámetros del paciente (sobrescriben SMITH); volumenExtra: mL.
+   */
+  function simularCronico(params, volumenExtra, opciones) {
+    const p = Object.assign({}, SMITH, params);
+    p.C = 0.375 * p.period / 0.75;
+    const u = Object.assign({}, URSINO, (opciones && opciones.ursino) || {}, APAGADO);
+    const y0 = aplicarVolumen(ESTADO_INICIAL, volumenExtra || 0);
+    const r = simular(p, u, y0, 60, Object.assign({ guardarDesde: 0 }, opciones));
+    return { clinicas: variablesClinicas(r), serie: r };
+  }
+
+  /*
+   * Hemorragia: igual que simular_hemorragia de generar_cohortes_v6.py (3 fases).
+   * reflejo = false -> el reflejo sigue apagado en la fase C (para comparar).
+   */
+  function simularHemorragia(params, volumenExtra, perdidaML, reflejo, opciones) {
+    return simularAgudo(params, params, volumenExtra, -perdidaML, reflejo, opciones);
+  }
+  /*
+   * Shock agudo (shock cardiogénico, 18/11/2026): igual que simular_shock_agudo de generar_cohortes_v6.py.
+   * Fases A y B con la persona antes del shock; en la fase C se aplica la enfermedad con el reflejo activo.
+   */
+  function simularShockAgudo(paramsAntes, params, volumenAntes, volumenPatologia, reflejo, opciones) {
+    return simularAgudo(paramsAntes, params, volumenAntes, volumenPatologia, reflejo, opciones);
+  }
+  function simularAgudo(paramsAntes, paramsDespues, volumenExtra, cambioVolumen, reflejo, opciones) {
+    const op = opciones || {};
+    const p = Object.assign({}, SMITH, paramsAntes);
+    p.C = 0.375 * p.period / 0.75;
+    const p2 = Object.assign({}, SMITH, paramsDespues);
+    p2.C = 0.375 * p2.period / 0.75;
+    const prog = f => op.alProgreso && op.alProgreso(f);
+    const UU = Object.assign({}, URSINO, op.ursino || {});   // parámetros del reflejo (p. ej. escalados por tamaño)
+    // Fase A: reposo, sin reflejo (30 s)
+    let u = Object.assign({}, UU, APAGADO);
+    let r = simular(p, u, aplicarVolumen(ESTADO_INICIAL, volumenExtra || 0), 30,
+      { alProgreso: f => prog(0.16 * f) });
+    const reposo = variablesClinicas(r);
+    // Fase B: calibración (40 s), efectores lentos x10, consigna = PAM de reposo
+    u = Object.assign({}, UU, APAGADO, { P_n: reposo.PAM_mmHg });
+    for (const k of ["tau_Elv", "tau_Erv", "tau_Rsp", "tau_Rep", "tau_Vusv", "tau_Vuev"]) u[k] = UU[k] / 10;
+    r = simular(p, u, r.y, 40, { cada: 1000000, promediar: 10, alProgreso: f => prog(0.16 + 0.21 * f) });
+    const y = Float64Array.from(r.y);
+    const m = r.medias;
+    for (let j = 15; j <= 22; j++) y[j] = m[j];
+    const U = UU;
+    const refs = {
+      Elv_ref: U.Elv_0 + m[15], Erv_ref: U.Erv_0 + m[16],
+      Rtot_ref: U.R_sa + 1 / (1 / (U.Rsp_0 + m[17] + U.R_sv) + 1 / (U.Rep_0 + m[18] + U.R_ev)),
+      Vu_ref: U.Vusv_0 + m[19] + U.Vuev_0 + m[20], T_ref: U.T_0 + m[21] + m[22],
+    };
+    // Fase C: hemorragia o shock (120 s)
+    u = Object.assign({}, UU, { P_n: reposo.PAM_mmHg }, refs, reflejo === false ? APAGADO : {});
+    r = simular(p2, u, aplicarVolumen(y, cambioVolumen), 120, { alProgreso: f => prog(0.37 + 0.63 * f) });
+    const clinicas = variablesClinicas(r);
+    clinicas.PAS_reposo_mmHg = reposo.PAS_mmHg;
+    clinicas.PAM_reposo_mmHg = reposo.PAM_mmHg;
+    clinicas.FC_reposo_lpm = reposo.FC_lpm;
+    return { clinicas, reposo, serie: r };
+  }
+
+  const API = { SMITH, URSINO, NOMBRES, ESTADO_INICIAL, simular, aplicarVolumen, variablesClinicas,
+    simularCronico, simularHemorragia, simularShockAgudo };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  else raiz.ModeloV5 = API;
+})(typeof self !== "undefined" ? self : this);
+</script>
+<script type="text/plain" id="codigo-worker">
+self.onmessage = function (ev) {
+  const m = ev.data;
+  const t0 = Date.now();
+  const alProgreso = f => self.postMessage({ tipo: "progreso", valor: f });
+  let r;
+  try {
+    if (m.shockAgudo) r = ModeloV5.simularShockAgudo(m.paramsAntes, m.params, m.volumenAntes, m.volumenExtra - m.volumenAntes, m.reflejo, { alProgreso, ursino: m.ursino });
+    else if (m.hemorragia) r = ModeloV5.simularHemorragia(m.params, m.volumenExtra, m.perdidaML, m.reflejo, { alProgreso, ursino: m.ursino });
+    else r = ModeloV5.simularCronico(m.params, m.volumenExtra, { alProgreso, ursino: m.ursino });
+  } catch (e) { self.postMessage({ tipo: "error", mensaje: String(e) }); return; }
+  const s = r.serie, c = r.clinicas, L = c._latidos;
+  const ok = Object.values(c).every(v => typeof v !== "number" || isFinite(v) || isNaN(v));
+  // ondas de los 3 últimos latidos, cada 4 ms
+  const a = L[L.length - 3].a, b = L[L.length - 1].b;
+  const ondas = { t: [], P_ao: [], P_lv: [], V_lv: [] };
+  for (let i = a; i <= b; i += 4) { ondas.t.push((i - a) * s.dt); ondas.P_ao.push(s.P_ao[i]); ondas.P_lv.push(s.P_lv[i]); ondas.V_lv.push(s.V_lv[i]); }
+  // bucle presión-volumen del último latido, cada 2 ms
+  const pv = { V: [], P: [] };
+  const u = L[L.length - 1];
+  for (let i = u.a; i <= u.b; i += 2) { pv.V.push(s.V_lv[i]); pv.P.push(s.P_lv[i]); }
+  // tendencia latido a latido (hemorragia)
+  let tendencia = null;
+  if (m.hemorragia) {
+    tendencia = { t: [], PAM: [], FC: [] };
+    let k0 = Math.floor(s.phi[0]), ini = 0, suma = 0, n = 0;
+    for (let i = 0; i < s.phi.length; i++) {
+      const k = Math.floor(s.phi[i]);
+      if (k !== k0) {
+        if (ini > 0) { tendencia.t.push(ini * s.dt); tendencia.PAM.push(suma / n); tendencia.FC.push(60 / (n * s.dt)); }
+        k0 = k; ini = i; suma = 0; n = 0;
+      }
+      suma += s.P_ao[i]; n++;
+    }
+  }
+  delete c._latidos;
+  self.postMessage({ tipo: "resultado", clinicas: c, reposo: r.reposo ? { PAM: r.reposo.PAM_mmHg, FC: r.reposo.FC_lpm, PAS: r.reposo.PAS_mmHg, PAD: r.reposo.PAD_mmHg } : null,
+    ondas, pv, tendencia, ms: Date.now() - t0, ok });
+};
+</script>
+
+<script>
+(function () {
+  "use strict";
+  // ------------------------------------------------------------------ el modelo también en esta página (para leer sus valores por defecto)
+  new Function(document.getElementById("codigo-modelo").textContent)();
+  const SMITH = window.ModeloV5.SMITH, URSINO = window.ModeloV5.URSINO;
+
+  // ------------------------------------------------------------------ datos del modelo y de las cohortes
+  const NOMINAL = { E_es_lvf: 2.8798, E_es_rvf: 0.585, P_0_lvf: 0.3609, lambda_lvf: 0.033, R_sys: 1.034455,
+    R_pul: 0.0776, R_av: 0.018, R_mt: 0.0158, E_es_ao: 0.6913, E_es_vc: 0.00944, E_es_pa: 0.369, period: 0.75 };
+  const BASE = ["E_es_lvf", "E_es_rvf", "P_0_lvf", "lambda_lvf", "R_sys", "R_pul", "R_av", "R_mt", "E_es_ao", "E_es_vc", "E_es_pa"];
+  const NOMBRE_PARAM = {
+    E_es_lvf: "Contractilidad del VI", E_es_rvf: "Contractilidad del VD", P_0_lvf: "Rigidez diastólica del VI (escala)",
+    lambda_lvf: "Rigidez diastólica del VI (exponencial)", R_sys: "Resistencia sistémica", R_pul: "Resistencia pulmonar",
+    R_av: "Resistencia de la válvula aórtica", R_mt: "Resistencia de la válvula mitral", E_es_ao: "Rigidez de la aorta",
+    E_es_vc: "Rigidez de la vena cava", E_es_pa: "Rigidez de la arteria pulmonar", period: "Duración del latido en reposo" };
+  const UNIDAD_PARAM = { E_es_lvf: "mmHg/mL", E_es_rvf: "mmHg/mL", P_0_lvf: "mmHg", lambda_lvf: "1/mL", R_sys: "mmHg·s/mL",
+    R_pul: "mmHg·s/mL", R_av: "mmHg·s/mL", R_mt: "mmHg·s/mL", E_es_ao: "mmHg/mL", E_es_vc: "mmHg/mL", E_es_pa: "mmHg/mL", period: "s" };
+  // umbrales de los sanos de la base v6 realista (datos/cohortes_v6_realista_umbrales.csv, 12/11/2026)
+  const U = { PAI_p95: 14.108, PAI_p5: 6.841, PVC_p95: 7.433, IC_med: { H: 2.835, M: 2.477 } };
+  // mediana del índice cardíaco de los sanos DEL MISMO SEXO que el paciente (18/11/2026, referencias 8.13)
+  const icMed = v => U.IC_med[v.sexo === "M" ? "M" : "H"];
+  const SANGRE_REF = 5300;           // mL, volumen total del adulto de referencia (Ursino 1998)
+  const TENSIONADO_REF = 1860;       // mL, volumen tensionado del modelo v5
+
+  // ------------------------------------------------------------------ perfil del paciente (igual que script/perfil.py; docs/referencias.md sección 8)
+  const EDADES_CAL = [30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80];
+  const F_RSYS_EDAD = [0.919, 0.947, 0.974, 1, 1.026, 1.052, 1.077, 1.103, 1.129, 1.156, 1.182];
+  const F_EAO_EDAD = [0.942, 0.937, 0.956, 1, 1.072, 1.167, 1.293, 1.449, 1.639, 1.865, 2.133];
+  const TABACO_EAO = 1.21;
+  const INICIO_GRUPOS_FC = [20, 40, 60, 80], FC_NHANES = { H: [71, 71, 70, 71], M: [76, 73, 73, 73] }, FC_REF = 71;
+  const DIABETES_LAMBDA = 1.060, DIABETES_VOL = 264;
+  const DIVIDIR_S = ["E_es_lvf", "E_es_rvf", "E_es_spt", "E_es_pa", "E_es_pu", "E_es_ao", "E_es_vc",
+    "lambda_lvf", "lambda_rvf", "lambda_spt", "lambda_pcd", "R_mt", "R_av", "R_tc", "R_pv", "R_pul", "R_sys",
+    "L_mt", "L_av", "L_tc", "L_pv"];
+  const MULTIPLICAR_S = ["V_0_pcd", "V_d_spt", "V_0_spt"];
+  const REFLEJO_S = ["Vusv_0", "Vuev_0", "G_Vusv", "G_Vuev"];
+  const MEDICAMENTOS = {
+    ninguno: { nombre: "Ninguna", f: {} },
+    ieca: { nombre: "IECA / ARA-II", corto: "IECA/ARA-II", f: { R_sys: 0.907, E_es_ao: 0.910 }, nota: "Vasodilatador. En un hipertenso de 154/97 baja ≈ 9/5 mmHg (Law 2003)." },
+    calcio: { nombre: "Calcioantagonista", f: { R_sys: 0.907, E_es_ao: 0.910 }, nota: "Vasodilatador. Misma eficacia media que los IECA (Law 2003)." },
+    diuretico: { nombre: "Diurético (tiazida)", f: { R_sys: 0.907, E_es_ao: 0.910 }, nota: "Efecto a las semanas: baja la resistencia periférica (Sica 2004). La pérdida de líquido de los primeros días no se modela." },
+    betabloqueante: { nombre: "Betabloqueante", f: { R_sys: 1.177, E_es_lvf: 0.847, E_es_rvf: 0.847 }, fc: -10, nota: "FC −10 lpm, menos contractilidad y gasto (−20 %), más resistencia." },
+    dobutamina: { nombre: "Dobutamina (perfusión)", f: { E_es_lvf: 1.525, E_es_rvf: 1.525, R_sys: 0.561 }, fcFactor: 1.174, nota: "Inótropo para la IC grave o el shock cardiogénico (Beregovich 1975: gasto × 1,7)." },
+  };
+  const PERFIL_REF = { sexo: "H", edad: 45, altura: 1.75, peso: 70, fumador: false, diabetes: false };
+
+  const interp = (x, xs, ys) => x <= xs[0] ? ys[0] : x >= xs[xs.length - 1] ? ys[ys.length - 1]
+    : (() => { let i = 0; while (x > xs[i + 1]) i++; return ys[i] + (ys[i + 1] - ys[i]) * (x - xs[i]) / (xs[i + 1] - xs[i]); })();
+  const volumenNadler = (h, w, sexo) => sexo === "H" ? 0.3669 * h ** 3 + 0.03219 * w + 0.6041 : 0.3561 * h ** 3 + 0.03308 * w + 0.1833;
+  function factoresPerfil(pf) {
+    const imc = pf.peso / pf.altura ** 2;
+    let grupo = 0; INICIO_GRUPOS_FC.forEach((ini, i) => { if (pf.edad >= ini) grupo = i; });
+    return {
+      fR: interp(pf.edad, EDADES_CAL, F_RSYS_EDAD),
+      fE: interp(pf.edad, EDADES_CAL, F_EAO_EDAD) * (pf.fumador ? TABACO_EAO : 1),
+      fl: pf.diabetes ? DIABETES_LAMBDA : 1,
+      s: volumenNadler(pf.altura, pf.peso, pf.sexo) / volumenNadler(1.75, 70, "H"),
+      difFC: FC_NHANES[pf.sexo][grupo] - FC_REF,
+      imc, catIMC: imc < 18.5 ? "bajo peso" : imc < 25 ? "normal" : imc < 30 ? "sobrepeso" : "obesidad",
+      sc: Math.sqrt(pf.altura * 100 * pf.peso / 3600),
+    };
+  }
+
+  /* paciente = { perfil, base: {parámetro: valor antes del perfil}, volBase (mL, tamaño de referencia),
+                  aplicarDifFC, medicamento, perdida (fracción), reflejo } */
+  function construir(pac) {
+    const f = factoresPerfil(pac.perfil);
+    const p = Object.assign({}, SMITH, pac.base);
+    p.R_sys *= f.fR; p.E_es_ao *= f.fE; p.lambda_lvf *= f.fl;
+    if (pac.aplicarDifFC) p.period = 60 / (60 / p.period + f.difFC);
+    for (const k of DIVIDIR_S) p[k] /= f.s;
+    for (const k of MULTIPLICAR_S) p[k] *= f.s;
+    const ursino = {}; for (const k of REFLEJO_S) ursino[k] = URSINO[k] * f.s;
+    const med = MEDICAMENTOS[pac.medicamento || "ninguno"];
+    for (const [k, v] of Object.entries(med.f)) p[k] *= v;
+    if (med.fc) p.period = 60 / (60 / p.period + med.fc);
+    if (med.fcFactor) p.period = p.period / med.fcFactor;
+    const volRef = pac.volBase + (pac.perfil.diabetes ? DIABETES_VOL : 0);
+    return { params: p, ursino, f, volumenExtra: f.s * (TENSIONADO_REF + volRef) - TENSIONADO_REF,
+      perdidaML: (pac.perdida || 0) * SANGRE_REF * f.s, sangreTotal: SANGRE_REF * f.s };
+  }
+
+  // 18/11/2026, arreglos de la validación (referencias, 8.17): vd = ventrículo derecho afectado en 1 de cada 3
+  // pacientes (E_es_rvf x 0,5-0,7); agudo = shock con el barorreflejo activo; fcExtra = FC de base + n lpm
+  const COHORTES = [
+    { id: "sana", nombre: "Sano", pat: {}, vol: [0, 0, 0], ok: v => v.PAS_mmHg >= 90 && v.PAS_mmHg < 140 && v.PAD_mmHg >= 60 && v.PAD_mmHg < 90 && v.FE_pct >= 50 && v.IC_Lmin_m2 >= 2.0 && v.IC_Lmin_m2 <= 4.5 },
+    { id: "hipertension", nombre: "Hipertensión", pat: { R_sys: [1.15, 1.8], E_es_ao: [1.0, 1.5] }, vol: [0, 0, 0], ok: v => v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90 },
+    { id: "ic_fe_reducida", nombre: "Insuficiencia cardíaca con FE reducida", pat: { E_es_lvf: [0.3, 0.5], R_sys: [1.0, 1.3] }, grav: ["E_es_lvf", "min"], vol: [900, 1300, 400], vd: true, ok: v => v.FE_pct <= 40 && v.PAS_mmHg >= 90 },
+    { id: "ic_fe_conservada", nombre: "Insuficiencia cardíaca con FE conservada", pat: { lambda_lvf: [1.3, 2.0], P_0_lvf: [1.0, 2.0], R_sys: [1.1, 1.4], E_es_ao: [1.0, 1.4] }, grav: ["lambda_lvf", "max"], vol: [900, 1300, 800], vd: true, ok: v => v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90 },
+    { id: "ic_derecha", nombre: "Insuficiencia cardíaca derecha", pat: { E_es_rvf: [0.3, 0.6] }, vol: [100, 500, 0], ok: v => v.PVC_mmHg > U.PVC_p95 && v.IC_Lmin_m2 < icMed(v) },
+    { id: "hipertension_pulmonar", nombre: "Hipertensión pulmonar", pat: { R_pul: [2.0, 4.0] }, vol: [0, 0, 0], ok: v => v.PAPm_mmHg > 20 },
+    { id: "estenosis_aortica", nombre: "Estenosis aórtica", pat: { R_av: [3.0, 15.0], E_es_lvf: [1.0, 1.3], lambda_lvf: [1.0, 1.4] }, vol: [0, 0, 0], ok: v => v.Grad_Ao_medio_mmHg >= 20 },
+    { id: "estenosis_mitral", nombre: "Estenosis mitral", pat: { R_mt: [2.0, 5.0] }, vol: [300, 900, 0], ok: v => v.Grad_Mi_medio_mmHg >= 5 && v.PAI_mmHg > U.PAI_p95 },
+    { id: "shock_cardiogenico", nombre: "Shock cardiogénico", pat: { E_es_lvf: [0.15, 0.3], R_sys: [1.0, 1.3] }, grav: ["E_es_lvf", "min"], vol: [500, 900, 600], vd: true, agudo: true, ok: v => v.PAS_mmHg < 90 && v.FE_pct <= 40 && v.IC_Lmin_m2 < 2.2 && v.PAI_mmHg > U.PAI_p95 },
+    { id: "shock_distributivo", nombre: "Shock distributivo", pat: { R_sys: [0.28, 0.48] }, vol: [0, 0, 0], fcExtra: 25, ok: v => v.PAM_mmHg < 65 && v.IC_Lmin_m2 >= icMed(v) },
+    { id: "hemorragia_compensada", nombre: "Hemorragia compensada", pat: {}, vol: [0, 0, 0], perdida: [0.10, 0.25], ok: v => v.PAS_mmHg >= 90 && v.PAI_mmHg < U.PAI_p5 },
+    { id: "shock_hemorragico", nombre: "Shock hemorrágico", pat: {}, vol: [0, 0, 0], perdida: [0.28, 0.36], ok: v => v.PAS_mmHg < 90 },
+    { id: "hta_icfep", nombre: "Hipertensión + IC con FE conservada", pat: { R_sys: [1.3, 1.8], E_es_ao: [1.0, 1.5], lambda_lvf: [1.3, 2.0], P_0_lvf: [1.0, 2.0], E_es_lvf: [1.0, 1.3] }, grav: ["lambda_lvf", "max"], vol: [1100, 1500, 800], vd: true, ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90 },
+    { id: "hta_estenosis_aortica", nombre: "Hipertensión + estenosis aórtica", pat: { R_sys: [1.3, 1.8], E_es_ao: [1.0, 1.5], R_av: [3.0, 15.0], E_es_lvf: [1.0, 1.3], lambda_lvf: [1.0, 1.4] }, vol: [0, 0, 0], ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.Grad_Ao_medio_mmHg >= 20 },
+    { id: "hta_icfer", nombre: "Hipertensión + IC con FE reducida", pat: { R_sys: [1.8, 2.6], E_es_ao: [1.0, 1.5], E_es_lvf: [0.3, 0.5] }, grav: ["E_es_lvf", "min"], vol: [1100, 1500, 400], vd: true, ok: v => (v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90) && v.FE_pct <= 40 && v.PAS_mmHg >= 90 },
+    { id: "ic_biventricular", nombre: "Insuficiencia cardíaca biventricular", pat: { E_es_lvf: [0.3, 0.5], E_es_rvf: [0.3, 0.6], R_sys: [1.1, 1.5] }, grav: ["E_es_lvf", "min"], vol: [500, 900, 400], ok: v => v.FE_pct <= 40 && v.PAS_mmHg >= 90 && v.PVC_mmHg > U.PVC_p95 && v.IC_Lmin_m2 < icMed(v) },
+  ];
+
+  // deslizadores del modo "Crear paciente"
+  const DESLIZ_PERFIL = [
+    { k: "edad", t: "Edad", min: 20, max: 90, paso: 1, unidad: "años", ayuda: "Calibrada con Framingham entre 30 y 80 años (fuera de ese rango se mantiene el extremo)" },
+    { k: "altura", t: "Altura", min: 145, max: 205, paso: 1, unidad: "cm" },
+    { k: "peso", t: "Peso", min: 40, max: 150, paso: 1, unidad: "kg" },
+  ];
+  const DESLIZ = [
+    { g: "Ventrículo izquierdo", k: "E_es_lvf", t: "Contractilidad", min: 0.1, max: 1.6, paso: 0.01, ayuda: "Baja en la insuficiencia cardíaca con FE reducida y en el shock cardiogénico" },
+    { g: "Ventrículo izquierdo", k: "lambda_lvf", t: "Rigidez en el llenado", min: 0.7, max: 2.4, paso: 0.01, ayuda: "Alta en la IC con FE conservada (ventrículo rígido)" },
+    { g: "Ventrículo derecho", k: "E_es_rvf", t: "Contractilidad", min: 0.2, max: 1.6, paso: 0.01, ayuda: "Baja en la insuficiencia cardíaca derecha" },
+    { g: "Vasos", k: "R_sys", t: "Resistencia sistémica", min: 0.3, max: 2.8, paso: 0.01, ayuda: "Alta en la hipertensión; baja en el shock distributivo. Se suma al efecto de la edad" },
+    { g: "Vasos", k: "E_es_ao", t: "Rigidez de la aorta", min: 0.6, max: 1.8, paso: 0.01, ayuda: "Alta en la hipertensión. Se suma al efecto de la edad y del tabaco" },
+    { g: "Vasos", k: "R_pul", t: "Resistencia pulmonar", min: 0.5, max: 4.5, paso: 0.01, ayuda: "Alta en la hipertensión pulmonar" },
+    { g: "Válvulas", k: "R_av", t: "Estrechez de la válvula aórtica", min: 1, max: 20, paso: 0.1, ayuda: "Estenosis aórtica: moderada desde ×3–4, grave desde ×8–10 aprox." },
+    { g: "Válvulas", k: "R_mt", t: "Estrechez de la válvula mitral", min: 1, max: 6, paso: 0.05, ayuda: "Estenosis mitral" },
+    { g: "Volumen y ritmo", k: "vol", t: "Sangre extra (retención de líquido)", min: -300, max: 1500, paso: 10, unidad: "mL", ayuda: "Para un adulto de referencia; se ajusta al tamaño del paciente. La insuficiencia cardíaca retiene líquido" },
+    { g: "Volumen y ritmo", k: "fc", t: "Frecuencia cardíaca en reposo", min: 60, max: 95, paso: 1, unidad: "lpm", ayuda: "Sin medicación. Media en reposo: 71 lpm hombres, 73–76 mujeres (NHANES)" },
+  ];
+
+  // ------------------------------------------------------------------ utilidades
+  const $ = id => document.getElementById(id);
+  const fmt = (x, d = 1) => (x == null || !isFinite(x)) ? "—" : x.toLocaleString("es-ES", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const azar = (a, b) => a + (b - a) * Math.random();
+  const normal = (m, sd) => m + sd * Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+  const svgNS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, padre) { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (padre) padre.appendChild(e); return e; }
+  const textoPerfil = (pf, med) => [pf.sexo === "H" ? "Hombre" : "Mujer", `${fmt(pf.edad, 0)} años`, `${fmt(pf.altura * 100, 0)} cm`, `${fmt(pf.peso, 0)} kg`,
+    pf.fumador ? (pf.sexo === "H" ? "fumador" : "fumadora") : null, pf.diabetes ? "diabetes tipo 2" : null,
+    med && med !== "ninguno" ? (MEDICAMENTOS[med].corto || MEDICAMENTOS[med].nombre.toLowerCase()) : null].filter(Boolean).join(" · ");
+
+  // ------------------------------------------------------------------ worker con el modelo
+  const fuente = $("codigo-modelo").textContent + "\n" + $("codigo-worker").textContent;
+  const worker = new Worker(URL.createObjectURL(new Blob([fuente], { type: "text/javascript" })));
+  let pendiente = null;
+  worker.onmessage = ev => {
+    const m = ev.data;
+    if (m.tipo === "progreso") { $("barra").style.width = (100 * m.valor).toFixed(1) + "%"; return; }
+    $("barra").style.width = "100%";
+    const p = pendiente; pendiente = null;
+    if (m.tipo === "error") p.rechazar(new Error(m.mensaje)); else p.resolver(m);
+  };
+  function simularPaciente(pac) {
+    const c = construir(pac);
+    const cA = pac.antes ? construir({ ...pac, base: pac.antes.base, volBase: pac.antes.volBase }) : null;
+    return new Promise((resolver, rechazar) => {
+      pendiente = { resolver, rechazar }; $("barra").style.width = "0%";
+      worker.postMessage({ params: c.params, ursino: c.ursino, volumenExtra: c.volumenExtra,
+        hemorragia: pac.perdida > 0, perdidaML: c.perdidaML, reflejo: pac.reflejo !== false,
+        shockAgudo: !!cA, paramsAntes: cA && cA.params, volumenAntes: cA && cA.volumenExtra });
+    }).then(r => {
+      r.clinicas.IC_Lmin_m2 = r.clinicas.GC_Lmin / c.f.sc;
+      // el sexo viaja con las variables (no enumerable: no aparece en las tablas) para los umbrales por sexo
+      Object.defineProperty(r.clinicas, "sexo", { value: pac.perfil.sexo, enumerable: false });
+      return r;
+    });
+  }
+
+  // ------------------------------------------------------------------ generación de pacientes aleatorios
+  // Perfil de la población española (igual que script/perfil.py, sortear_perfil; referencias, secciones 8.9, 8.10 y 8.12)
+  const POB_30_79 = { H: [1458512, 1532793, 1770981, 2054811, 1974013, 1811055, 1614179, 1350011, 1065706, 889002],
+                      M: [1415174, 1529349, 1775900, 2032474, 1969968, 1862894, 1714638, 1489076, 1234885, 1118942] };   // INE 1/1/2025
+  const porGrupo = (x, inicios, valores) => { let p = 0; inicios.forEach((a, i) => { if (x >= a) p = i; }); return valores[p]; };
+  // edad y sexo según la enfermedad (sección 8.12): HTA por edad y sexo (Menéndez 2016) y registros clínicos
+  const HTA_INICIO = [18, 31, 46, 61, 76], HTA_PREV = { H: [0.167, 0.274, 0.546, 0.775, 0.870], M: [0.033, 0.100, 0.373, 0.737, 0.900] };
+  const EDAD_SEXO_COHORTE = {   // [edad media, desviación típica, fracción de mujeres]
+    ic_fe_reducida: [64.0, 12.6, 0.216], ic_fe_conservada: [68.6, 13.7, 0.479], ic_derecha: [64.8, 13.3, 0.282],   // Chioncel 2017
+    hipertension_pulmonar: [44.0, 16.3, 0.690],      // Quezada Loaiza 2017
+    estenosis_aortica: [74.0, 9.7, 0.483],           // registro IDEAS (González Saldivar 2019)
+    estenosis_mitral: [57.0, 12.0, 0.810],           // Euro Heart Survey (Iung 2003)
+    shock_cardiogenico: [67.0, 12.0, 0.260],         // CardShock (Harjola 2015)
+    shock_distributivo: [63.0, 14.4, 0.335],         // Azkárate 2012
+    hemorragia_compensada: [47.1, 19.0, 0.210], shock_hemorragico: [47.1, 19.0, 0.210],   // RETRAUCI (Chico-Fernández 2016)
+    hta_icfep: [68.6, 13.7, 0.479], hta_estenosis_aortica: [74.0, 9.7, 0.483], hta_icfer: [64.0, 12.6, 0.216], ic_biventricular: [64.0, 12.6, 0.216],
+  };
+  const IMC_INICIO = [18, 25, 35, 45, 55, 65, 75, 85];
+  const IMC_MEDIA = { H: [24.68, 25.36, 25.57, 26.47, 27.05, 26.95, 26.47, 25.54], M: [22.43, 23.65, 24.09, 24.85, 25.37, 26.18, 25.55, 25.1] };
+  const IMC_DT = { H: 3.65, M: 5.02 };
+  const DIAB_INICIO = [18, 31, 46, 61, 76], DIAB_PREV = { H: [0.003, 0.067, 0.238, 0.424, 0.374], M: [0.006, 0.022, 0.109, 0.298, 0.413] };
+  const DIAB_OR_IMC = [1.0, 1.9, 4.6];            // IMC < 25, 25-30, >= 30 (Rojo-Martínez 2020, Di@bet.es)
+  const erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; };
+  const fiNormal = z => 0.5 * (1 + erf(z / Math.SQRT2));
+  const cacheBaseDiab = {};
+  function probDiabetes(edad, sexo, imc) {
+    const prev = porGrupo(edad, DIAB_INICIO, DIAB_PREV[sexo]), m = porGrupo(edad, IMC_INICIO, IMC_MEDIA[sexo]), dt = IMC_DT[sexo];
+    const clave = prev + "|" + m + "|" + dt;
+    if (!(clave in cacheBaseDiab)) {     // odds con IMC < 25 que da la prevalencia de Di@bet.es en el grupo
+      const pN = fiNormal((25 - m) / dt), pO = 1 - fiNormal((30 - m) / dt), fr = [pN, 1 - pN - pO, pO];
+      let lo = -20, hi = 10;
+      for (let k = 0; k < 100; k++) {
+        const mid = (lo + hi) / 2, b = Math.exp(mid);
+        const media = fr.reduce((s, p, i) => s + p * b * DIAB_OR_IMC[i] / (1 + b * DIAB_OR_IMC[i]), 0);
+        if (media < prev) lo = mid; else hi = mid;
+      }
+      cacheBaseDiab[clave] = Math.exp((lo + hi) / 2);
+    }
+    const odds = cacheBaseDiab[clave] * DIAB_OR_IMC[imc < 25 ? 0 : imc < 30 ? 1 : 2];
+    return odds / (1 + odds);
+  }
+  function sexoEdad(cohId) {
+    if (EDAD_SEXO_COHORTE[cohId]) {
+      const [media, dt, mujeres] = EDAD_SEXO_COHORTE[cohId], sexo = Math.random() < mujeres ? "M" : "H";
+      for (;;) { const edad = normal(media, dt); if (edad >= 30 && edad < 80) return [sexo, edad]; }
+    }
+    const suma = a => a.reduce((x, y) => x + y, 0);
+    for (;;) {
+      const sexo = Math.random() < suma(POB_30_79.M) / (suma(POB_30_79.M) + suma(POB_30_79.H)) ? "M" : "H";
+      const w = POB_30_79[sexo]; let r = Math.random() * suma(w), g = 0; while (r > w[g]) { r -= w[g]; g++; }
+      const edad = 30 + 5 * g + azar(0, 5);
+      if (cohId !== "sana" && cohId !== "hipertension") return [sexo, edad];
+      const pHta = porGrupo(edad, HTA_INICIO, HTA_PREV[sexo]);
+      if (Math.random() < (cohId === "hipertension" ? pHta : 1 - pHta)) return [sexo, edad];
+    }
+  }
+  function perfilAleatorio(cohId) {
+    const [sexo, edad] = sexoEdad(cohId), nacimiento = 2025 - edad;
+    const media = sexo === "H" ? interp(nacimiento, [1910, 1982], [166, 177])
+                               : interp(nacimiento, [1942, 1952.5, 1962.5, 1972.5, 1980], [154.7, 156.8, 159.5, 161.2, 161.9]);
+    const alturaCm = Math.min(205, Math.max(145, normal(media, sexo === "H" ? 6.42 : 5.96)));   // DT: Carrascosa 2008
+    const imc = Math.min(50, Math.max(16, normal(porGrupo(edad, IMC_INICIO, IMC_MEDIA[sexo]), IMC_DT[sexo])));
+    return { sexo, edad: Math.floor(edad), altura: Math.round(alturaCm) / 100, peso: Math.round(imc * (alturaCm / 100) ** 2),
+      fumador: Math.random() < (sexo === "H" ? 0.202 : 0.133),
+      diabetes: Math.random() < probDiabetes(edad, sexo, imc) };
+  }
+  function pacienteAleatorio(coh, conPerfil) {
+    const base = {};
+    for (const k of BASE) base[k] = NOMINAL[k] * azar(0.8, 1.2);
+    base.period = azar(0.65, 0.95);
+    const volIndividual = azar(-186, 186);
+    const baseAntes = { ...base };                      // la misma persona antes de enfermar (shock agudo)
+    const factores = {};
+    for (const [k, [lo, hi]] of Object.entries(coh.pat)) { factores[k] = azar(lo, hi); base[k] *= factores[k]; }
+    if (coh.vd && Math.random() < 1 / 3) { factores.E_es_rvf = azar(0.5, 0.7); base.E_es_rvf *= factores.E_es_rvf; }
+    if (coh.fcExtra) base.period = 60 / (60 / base.period + coh.fcExtra);
+    let gravedad = 0;
+    if (coh.grav) { const [k, ext] = coh.grav, [lo, hi] = coh.pat[k]; gravedad = (factores[k] - lo) / (hi - lo); if (ext === "min") gravedad = 1 - gravedad; }
+    const [vmin, vmax, vgrav] = coh.vol;
+    return { perfil: conPerfil ? perfilAleatorio(coh.id) : { ...PERFIL_REF }, base, volBase: volIndividual + azar(vmin, vmax) + vgrav * gravedad,
+      aplicarDifFC: true, medicamento: "ninguno", perdida: coh.perdida ? azar(coh.perdida[0], coh.perdida[1]) : 0, reflejo: true, cohorte: coh,
+      antes: coh.agudo ? { base: baseAntes, volBase: volIndividual } : null, vdAfectado: factores.E_es_rvf != null && !!coh.vd };
+  }
+
+  function evaluarCriterios(v, perdida) {
+    const hta = v.PAS_mmHg >= 140 || v.PAD_mmHg >= 90;
+    const gradoHta = v.PAS_mmHg >= 180 || v.PAD_mmHg >= 110 ? "grado 3" : v.PAS_mmHg >= 160 || v.PAD_mmHg >= 100 ? "grado 2" : "grado 1";
+    const lista = [
+      { n: "Hipertensión arterial" + (hta ? ` (${gradoHta})` : ""), si: hta, c: "PAS ≥ 140 o PAD ≥ 90 mmHg" },
+      { n: "IC con fracción de eyección reducida", si: v.FE_pct <= 40 && v.PAS_mmHg >= 90, c: "FE ≤ 40 % con PAS ≥ 90" },
+      { n: "IC con fracción de eyección conservada", si: v.FE_pct >= 50 && v.PAI_mmHg > U.PAI_p95 && v.PAS_mmHg >= 90, c: `FE ≥ 50 % y presión de la aurícula izquierda > ${fmt(U.PAI_p95)} mmHg (p95 de los sanos)` },
+      { n: "Insuficiencia cardíaca derecha", si: v.PVC_mmHg > U.PVC_p95 && v.IC_Lmin_m2 < icMed(v), c: `PVC > ${fmt(U.PVC_p95)} mmHg e índice cardíaco < ${fmt(icMed(v), 1)} L/min/m² (mediana de los sanos del mismo sexo)` },
+      { n: "Hipertensión pulmonar", si: v.PAPm_mmHg > 20, c: "Presión arterial pulmonar media > 20 mmHg" },
+      { n: "Estenosis aórtica" + (v.Grad_Ao_medio_mmHg >= 40 ? " (grave)" : v.Grad_Ao_medio_mmHg >= 20 ? " (moderada)" : ""), si: v.Grad_Ao_medio_mmHg >= 20, c: "Gradiente aórtico medio ≥ 20 mmHg (grave ≥ 40)" },
+      { n: "Estenosis mitral", si: v.Grad_Mi_medio_mmHg >= 5 && v.PAI_mmHg > U.PAI_p95, c: "Gradiente mitral medio ≥ 5 mmHg y presión auricular alta" },
+      { n: "Shock cardiogénico", si: v.PAS_mmHg < 90 && v.FE_pct <= 40 && v.IC_Lmin_m2 < 2.2 && v.PAI_mmHg > U.PAI_p95, c: "PAS < 90, FE ≤ 40 %, índice cardíaco < 2,2 L/min/m² y presiones de llenado altas" },
+      { n: "Shock distributivo", si: v.PAM_mmHg < 65 && v.IC_Lmin_m2 >= icMed(v), c: "PAM < 65 mmHg con índice cardíaco normal o alto" },
+    ];
+    if (perdida > 0) {
+      lista.push({ n: "Hemorragia compensada (hipovolemia)", si: v.PAS_mmHg >= 90 && v.PAI_mmHg < U.PAI_p5, c: `Tras perder sangre: PAS ≥ 90 y presión de la aurícula izquierda < ${fmt(U.PAI_p5)} mmHg` });
+      lista.push({ n: "Shock hipovolémico", si: v.PAS_mmHg < 90, c: "Tras perder sangre: PAS < 90 mmHg" });
+    }
+    return lista;
+  }
+
+  // ------------------------------------------------------------------ gráficas (SVG)
+  function escalaBonita(min, max, n) {
+    const rango = max - min || 1, bruto = rango / n, mag = Math.pow(10, Math.floor(Math.log10(bruto)));
+    const paso = [1, 2, 2.5, 5, 10].map(f => f * mag).find(p => p >= bruto) || 10 * mag;
+    const a = Math.floor(min / paso) * paso, b = Math.ceil(max / paso) * paso;
+    const ticks = []; for (let v = a; v <= b + paso / 2; v += paso) ticks.push(+v.toFixed(10));
+    return { a, b, ticks };
+  }
+
+  function grafica(contenedor, series, op) {
+    contenedor.innerHTML = "";
+    const W = Math.max(280, contenedor.clientWidth || 600), H = op.alto || 230;
+    const m = { l: 42, r: 12, t: 10, b: 30 };
+    const xs = series.flatMap(s => s.x), ys = series.flatMap(s => s.y).filter(isFinite);
+    if (op.ref) ys.push(op.ref.y);
+    const ex = op.xIgual ? escalaBonita(Math.min(...xs), Math.max(...xs), 5) : { a: Math.min(...xs), b: Math.max(...xs), ticks: escalaBonita(Math.min(...xs), Math.max(...xs), 5).ticks.filter(t => t >= Math.min(...xs) - 1e-9 && t <= Math.max(...xs) + 1e-9) };
+    let ymin = Math.min(...ys), ymax = Math.max(...ys);
+    if (op.yDesdeCero) ymin = Math.min(0, ymin);
+    const ey = escalaBonita(ymin, ymax, 4);
+    const X = v => m.l + (v - ex.a) / (ex.b - ex.a || 1) * (W - m.l - m.r);
+    const Y = v => H - m.b - (v - ey.a) / (ey.b - ey.a || 1) * (H - m.t - m.b);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": op.aria || "" }, contenedor);
+    for (const t of ey.ticks) {
+      el("line", { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: "var(--sgrid)", "stroke-width": 1 }, svg);
+      const tx = el("text", { x: m.l - 6, y: Y(t) + 4, "text-anchor": "end" }, svg); tx.textContent = (op.yFmt || (v => fmt(v, 0)))(t);
+    }
+    el("line", { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: "var(--saxis)", "stroke-width": 1 }, svg);
+    for (const t of ex.ticks) {
+      const tx = el("text", { x: X(t), y: H - m.b + 16, "text-anchor": "middle" }, svg); tx.textContent = (op.xFmt || (v => fmt(v, 1)))(t);
+    }
+    if (op.xEtiqueta) { const tx = el("text", { x: W - m.r, y: H - 2, "text-anchor": "end" }, svg); tx.textContent = op.xEtiqueta; }
+    if (op.ref) {
+      el("line", { x1: m.l, x2: W - m.r, y1: Y(op.ref.y), y2: Y(op.ref.y), stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "4 4" }, svg);
+      const tx = el("text", { x: W - m.r, y: Y(op.ref.y) - 5, "text-anchor": "end" }, svg); tx.textContent = op.ref.texto;
+    }
+    for (const s of series) {
+      const d = s.x.map((x, i) => (i ? "L" : "M") + X(x).toFixed(1) + " " + Y(s.y[i]).toFixed(1)).join("");
+      el("path", { d: d + (op.cerrar ? "Z" : ""), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    }
+    const guia = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--saxis)", "stroke-width": 1, visibility: "hidden" }, svg);
+    const puntos = series.map(s => el("circle", { r: 4.5, fill: s.color, stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" }, svg));
+    const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; contenedor.appendChild(tip);
+    const zona = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+    function mover(ev) {
+      const caja = svg.getBoundingClientRect(), esc = W / caja.width;
+      const px = (ev.clientX - caja.left) * esc, py = (ev.clientY - caja.top) * esc;
+      let mejor = null;
+      series.forEach((s, j) => {
+        for (let i = 0; i < s.x.length; i++) {
+          const d = op.cerrar ? Math.hypot(X(s.x[i]) - px, Y(s.y[i]) - py) : Math.abs(X(s.x[i]) - px);
+          if (!mejor || d < mejor.d) mejor = { d, i, j };
+        }
+      });
+      if (!mejor) return;
+      const xv = series[mejor.j].x[mejor.i];
+      guia.setAttribute("x1", X(xv)); guia.setAttribute("x2", X(xv)); guia.setAttribute("visibility", op.cerrar ? "hidden" : "visible");
+      const filas = [];
+      series.forEach((s, j) => {
+        let i = mejor.i;
+        if (!op.cerrar) { let bi = 0, bd = Infinity; for (let q = 0; q < s.x.length; q++) { const d = Math.abs(s.x[q] - xv); if (d < bd) { bd = d; bi = q; } } i = bi; }
+        if (op.cerrar && j !== mejor.j) return;
+        puntos[j].setAttribute("cx", X(s.x[i])); puntos[j].setAttribute("cy", Y(s.y[i])); puntos[j].setAttribute("visibility", "visible");
+        filas.push(op.cerrar ? `<b>${fmt(s.y[i], 0)}</b> mmHg · <b>${fmt(s.x[i], 0)}</b> mL`
+                             : `<span style="color:${s.color}">●</span> ${s.nombre}: <b>${fmt(s.y[i], s.dec ?? 0)}</b> ${s.unidad || ""}`);
+      });
+      if (!op.cerrar) filas.unshift(`${(op.xFmt || (v => fmt(v, 2)))(xv)} ${op.xUnidad || ""}`);
+      tip.innerHTML = filas.join("<br>"); tip.hidden = false;
+      const r = contenedor.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+      tip.style.left = Math.max(0, Math.min(x + 14, r.width - tip.offsetWidth - 4)) + "px";
+      tip.style.top = Math.max(0, y - tip.offsetHeight - 10) + "px";
+    }
+    function salir() { guia.setAttribute("visibility", "hidden"); puntos.forEach(p => p.setAttribute("visibility", "hidden")); tip.hidden = true; }
+    zona.addEventListener("pointermove", mover); zona.addEventListener("pointerdown", mover); zona.addEventListener("pointerleave", salir);
+  }
+
+  // ------------------------------------------------------------------ pintar resultados
+  const RANGOS = {
+    PAS_mmHg: [90, 139], PAD_mmHg: [60, 89], PAM_mmHg: [70, 105], FC_lpm: [60, 100], GC_Lmin: [4, 8], FE_pct: [50, 75],
+    PVC_mmHg: [2, 8], PAI_mmHg: [6, 12], PAPm_mmHg: [0, 20], EDV_mL: [70, 150], IC: [2.5, 4],
+  };
+  function estado(k, v) {
+    const [lo, hi] = RANGOS[k];
+    if (v > hi) return { cls: (k === "PAS_mmHg" && v >= 180) || (k === "PAD_mmHg" && v >= 110) || (k === "FC_lpm" && v > 130) || (k === "PAI_mmHg" && v > 25) || (k === "PAPm_mmHg" && v >= 40) || (k === "PVC_mmHg" && v > 15) ? "critico" : "alto", txt: "▲ Alto" };
+    if (v < lo) return { cls: (k === "PAS_mmHg" && v < 80) || (k === "PAM_mmHg" && v < 60) || (k === "FE_pct" && v <= 30) || (k === "GC_Lmin" && v < 2.5) || (k === "IC" && v < 1.8) ? "critico" : "bajo", txt: "▼ Bajo" };
+    return { cls: "ok", txt: "● Normal" };
+  }
+  // escala de la regla de cada tarjeta (de dónde a dónde se dibuja)
+  const ESCALA_REGLA = {
+    PAS_mmHg: [60, 200], PAD_mmHg: [30, 130], PAM_mmHg: [40, 140], FC_lpm: [40, 140], GC_Lmin: [1, 10], IC: [1, 5],
+    FE_pct: [10, 80], PVC_mmHg: [-2, 16], PAI_mmHg: [0, 30], PAPm_mmHg: [5, 50], EDV_mL: [40, 260],
+  };
+  function regla(clave, valor, cls) {
+    const [a, b] = ESCALA_REGLA[clave], [lo, hi] = RANGOS[clave];
+    const pct = x => 100 * (Math.min(b, Math.max(a, x)) - a) / (b - a);
+    return `<div class="regla" aria-hidden="true"><span class="banda" style="left:${pct(lo)}%;width:${pct(hi) - pct(lo)}%"></span>`
+      + `<span class="punto ${cls}" style="left:${pct(valor)}%"></span></div>`;
+  }
+  function tarjeta(nombre, valorHtml, clave, valor, ref, delta) {
+    const e = estado(clave, valor);
+    return `<div class="param"><div class="nombre">${nombre}<span class="estado ${e.cls}">${e.txt}</span></div>
+      <div class="valor">${valorHtml}</div>${regla(clave, valor, e.cls)}<div class="ref">Normal: ${ref}${delta ? ` · <span class="delta">${delta}</span>` : ""}</div></div>`;
+  }
+
+  // ------------------------------------------------------------------ vista del paciente (figura y circulación)
+  const COLOR_ESTADO = { ok: "var(--ok)", alto: "var(--warn)", bajo: "var(--warn)", critico: "var(--crit)" };
+  const CORAZON = "M 0 .32 C -.62 -.08 -.36 -.62 0 -.3 C .36 -.62 .62 -.08 0 .32 Z";   // corazón de 1 × 1, centrado
+  const ICONOS = {
+    fumador: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="9" width="11" height="3" rx="1" fill="var(--ink-2)"/><rect x="12" y="9" width="3" height="3" rx="1" fill="var(--oxi)"/><path d="M13 7c0-2 2-2 2-4" fill="none" stroke="var(--muted)" stroke-width="1.2"/></svg>',
+    diabetes: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5C6 5 3.5 7.6 3.5 10.2a4.5 4.5 0 0 0 9 0C12.5 7.6 10 5 8 1.5Z" fill="var(--oxi)"/></svg>',
+    medicacion: '<svg viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(-40 8 8)"><rect x="2" y="5" width="12" height="6" rx="3" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.3"/><path d="M8 5h3a3 3 0 0 1 0 6H8Z" fill="var(--accent)"/></g></svg>',
+  };
+
+  // Figura del paciente: silueta simple a escala (canon de 8 cabezas). Cambia con el sexo, la altura,
+  // el IMC y la edad (pelo y bastón), y muestra signos ilustrativos (edemas, palidez, hemorragia).
+  function extremidad(pts) {
+    // pts: [{x, y, w}] a lo largo del eje de la extremidad -> contorno cerrado y suavizado
+    const izq = [], der = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
+      izq.push([p.x + nx * p.w / 2, p.y + ny * p.w / 2]); der.push([p.x - nx * p.w / 2, p.y - ny * p.w / 2]);
+    });
+    const contorno = izq.concat(der.reverse());
+    let d = `M ${contorno[0][0].toFixed(1)} ${contorno[0][1].toFixed(1)}`;
+    for (let i = 1; i < contorno.length; i++) {           // curvas por los puntos medios: contorno sin esquinas
+      const [x0, y0] = contorno[i], [x1, y1] = contorno[(i + 1) % contorno.length];
+      d += ` Q ${x0.toFixed(1)} ${y0.toFixed(1)} ${((x0 + x1) / 2).toFixed(1)} ${((y0 + y1) / 2).toFixed(1)}`;
+    }
+    return d + " Z";
+  }
+
+  function svgPersona(pf, imc, fc, signos) {
+    const suelo = 288, k = 1.25, cx = 132;                            // 1,25 px por cm: 2 m = 250 px
+    const alto = pf.altura * 100 * k, top = suelo - alto, u = alto / 8, Y = h => top + h * u;
+    const mujer = pf.sexo === "M", edad = pf.edad;
+    const g = Math.min(1.8, Math.max(0.78, imc / 22));                 // corpulencia según el IMC
+    const gl = Math.pow(g, 0.7), gt = Math.pow(g, 1.1);                // extremidades / cintura
+    const hom = u * (mujer ? 0.86 : 1.0) * Math.pow(g, 0.45), pec = u * (mujer ? 0.74 : 0.82) * Math.pow(g, 0.6);
+    const cin = u * (mujer ? 0.56 : 0.66) * gt, cad = u * (mujer ? 0.9 : 0.78) * Math.pow(g, 0.8);
+    const cuello = u * (mujer ? 0.22 : 0.27) * gl;
+    const torso = `M ${cx - cuello} ${Y(1.05)} L ${cx - cuello} ${Y(1.25)}
+      Q ${cx - hom * 0.85} ${Y(1.28)} ${cx - hom} ${Y(1.6)}
+      C ${cx - hom} ${Y(1.9)} ${cx - pec} ${Y(2.0)} ${cx - pec} ${Y(2.3)}
+      C ${cx - pec} ${Y(2.65)} ${cx - cin} ${Y(2.7)} ${cx - cin} ${Y(3.0)}
+      C ${cx - cin} ${Y(3.35)} ${cx - cad} ${Y(3.45)} ${cx - cad} ${Y(3.85)}
+      L ${cx - cad * 0.92} ${Y(4.25)} L ${cx + cad * 0.92} ${Y(4.25)} L ${cx + cad} ${Y(3.85)}
+      C ${cx + cad} ${Y(3.45)} ${cx + cin} ${Y(3.35)} ${cx + cin} ${Y(3.0)}
+      C ${cx + cin} ${Y(2.7)} ${cx + pec} ${Y(2.65)} ${cx + pec} ${Y(2.3)}
+      C ${cx + pec} ${Y(2.0)} ${cx + hom} ${Y(1.9)} ${cx + hom} ${Y(1.6)}
+      Q ${cx + hom * 0.85} ${Y(1.28)} ${cx + cuello} ${Y(1.25)} L ${cx + cuello} ${Y(1.05)} Z`;
+    const brazo = s => extremidad([
+      { x: cx + s * (hom - u * 0.17), y: Y(1.55), w: u * 0.36 * gl },
+      { x: cx + s * (Math.max(pec, cin) + u * 0.2), y: Y(2.95), w: u * 0.27 * gl },
+      { x: cx + s * (cad + u * 0.12), y: Y(4.0), w: u * 0.2 * gl },
+      { x: cx + s * (cad + u * 0.12), y: Y(4.45), w: u * 0.24 * gl },
+      { x: cx + s * (cad + u * 0.11), y: Y(4.62), w: u * 0.12 * gl },
+    ]);
+    const tobillo = signos.edema ? 0.36 : 0.19, pantorrilla = signos.edema ? 0.48 : 0.42;
+    const pierna = s => extremidad([
+      { x: cx + s * cad * 0.5, y: Y(3.95), w: cad * 0.98 },
+      { x: cx + s * u * 0.4 * Math.sqrt(g), y: Y(5.85), w: u * 0.36 * gl },
+      { x: cx + s * u * 0.38 * Math.sqrt(g), y: Y(6.5), w: u * pantorrilla * gl },
+      { x: cx + s * u * 0.33 * Math.sqrt(g), y: Y(7.65), w: u * tobillo * gl },
+      { x: cx + s * u * 0.33 * Math.sqrt(g), y: Y(7.9), w: u * 0.2 * gl },
+    ]);
+    const pies = [-1, 1].map(s => `<ellipse cx="${cx + s * u * 0.4 * Math.sqrt(g)}" cy="${suelo - u * 0.07}" rx="${u * 0.27}" ry="${u * 0.09}"/>`).join("");
+    // cabeza y pelo según el sexo y la edad
+    const rx = u * 0.37, ry = u * 0.47, yc = Y(0.5);
+    const tono = edad >= 60 ? "var(--pelo-canoso)" : edad < 30 ? "var(--pelo-joven)" : "var(--pelo)";
+    let peloAtras = "", peloDelante = "";
+    if (mujer) {
+      const largo = edad < 30 ? 1.9 : edad < 60 ? 1.35 : 0.95;      // melena larga, media o corta
+      peloAtras = `<path d="M ${cx - rx * 1.18} ${yc} C ${cx - rx * 1.3} ${yc - ry * 1.45} ${cx + rx * 1.3} ${yc - ry * 1.45} ${cx + rx * 1.18} ${yc}
+        C ${cx + rx * 1.22} ${yc + ry * largo * 0.6} ${cx + rx * 1.1} ${Y(0.5 + largo * 0.5)} ${cx + rx * 0.9} ${Y(0.5 + largo * 0.55)}
+        L ${cx - rx * 0.9} ${Y(0.5 + largo * 0.55)} C ${cx - rx * 1.1} ${Y(0.5 + largo * 0.5)} ${cx - rx * 1.22} ${yc + ry * largo * 0.6} ${cx - rx * 1.18} ${yc} Z" fill="${tono}"/>`;
+      peloDelante = `<path d="M ${cx - rx * 1.05} ${yc - ry * 0.05} C ${cx - rx * 1.1} ${yc - ry * 1.3} ${cx + rx * 1.1} ${yc - ry * 1.3} ${cx + rx * 1.05} ${yc - ry * 0.05}
+        C ${cx + rx * 0.7} ${yc - ry * 0.75} ${cx - rx * 0.2} ${yc - ry * 0.7} ${cx - rx * 1.05} ${yc - ry * 0.05} Z" fill="${tono}"/>`
+        + (edad >= 60 ? `<ellipse cx="${cx}" cy="${yc - ry * 1.12}" rx="${rx * 0.42}" ry="${ry * 0.26}" fill="${tono}"/>` : "");   // moño
+    } else if (edad >= 60) {
+      peloDelante = `<path d="M ${cx - rx * 1.04} ${yc + ry * 0.05} C ${cx - rx * 1.1} ${yc - ry * 0.55} ${cx - rx * 0.75} ${yc - ry * 0.8} ${cx - rx * 0.55} ${yc - ry * 0.82}
+        L ${cx - rx * 0.62} ${yc - ry * 0.55} C ${cx - rx * 0.85} ${yc - ry * 0.45} ${cx - rx * 0.92} ${yc - ry * 0.2} ${cx - rx * 0.9} ${yc + ry * 0.05} Z
+        M ${cx + rx * 1.04} ${yc + ry * 0.05} C ${cx + rx * 1.1} ${yc - ry * 0.55} ${cx + rx * 0.75} ${yc - ry * 0.8} ${cx + rx * 0.55} ${yc - ry * 0.82}
+        L ${cx + rx * 0.62} ${yc - ry * 0.55} C ${cx + rx * 0.85} ${yc - ry * 0.45} ${cx + rx * 0.92} ${yc - ry * 0.2} ${cx + rx * 0.9} ${yc + ry * 0.05} Z" fill="${tono}"/>`;   // entradas: pelo solo a los lados
+    } else {
+      const vol = edad < 30 ? 1.42 : 1.3;
+      peloDelante = `<path d="M ${cx - rx * 1.04} ${yc - ry * 0.02} C ${cx - rx * 1.12} ${yc - ry * vol} ${cx + rx * 1.12} ${yc - ry * vol} ${cx + rx * 1.04} ${yc - ry * 0.02}
+        C ${cx + rx * 0.8} ${yc - ry * 0.6} ${cx - rx * 0.8} ${yc - ry * 0.6} ${cx - rx * 1.04} ${yc - ry * 0.02} Z" fill="${tono}"/>`;
+    }
+    const baston = edad >= 70 ? `<g stroke="var(--figura-2)" stroke-width="${Math.max(2.5, u * 0.08)}" stroke-linecap="round" fill="none">
+        <path d="M ${cx + cad + u * 0.12} ${Y(4.45)} q ${u * 0.05} -${u * 0.18} ${u * 0.25} -${u * 0.1} L ${cx + cad + u * 0.37} ${suelo}"/></g>` : "";
+    // regla de altura (cada 10 cm; etiqueta cada 50 cm)
+    let regla = `<line x1="34" y1="${suelo}" x2="34" y2="${suelo - 200 * k}" stroke="var(--line-2)"/>`;
+    for (let cm = 0; cm <= 200; cm += 10) {
+      const y = suelo - cm * k, largo = cm % 50 === 0;
+      regla += `<line x1="${largo ? 26 : 30}" y1="${y}" x2="34" y2="${y}" stroke="var(--line-2)"/>`;
+      if (largo && cm > 0) regla += `<text x="23" y="${y + 4}" text-anchor="end" font-size="11" font-family="var(--f-mono)" fill="var(--muted)">${cm}</text>`;
+    }
+    const piel = signos.shock ? "var(--figura-palida)" : "var(--figura)";
+    const tc = u * 0.34, xc = cx + pec * 0.32, ycz = Y(1.95);            // corazón en el pecho
+    const lat = (60 / Math.max(fc, 20)).toFixed(3);
+    // bolsa de sangre (hemorragia): nivel = sangre que le queda
+    let bolsa = "";
+    if (signos.perdida > 0) {
+      const bx = 196, by = Y(2.1), bw = 30, bh = 46, queda = 1 - signos.perdida;
+      bolsa = `<g><rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="7" fill="var(--surface)" stroke="var(--line-2)"/>
+        <rect x="${bx + 3}" y="${by + 3 + (bh - 6) * (1 - queda)}" width="${bw - 6}" height="${(bh - 6) * queda}" rx="4" fill="var(--oxi)"/>
+        <line x1="${bx + bw / 2}" y1="${by}" x2="${bx + bw / 2}" y2="${by - 8}" stroke="var(--line-2)" stroke-width="2"/>
+        <text x="${bx + bw / 2}" y="${by + bh + 15}" text-anchor="middle" font-size="12" font-family="var(--f-mono)" font-weight="600" fill="var(--oxi)">−${fmt(100 * signos.perdida, 0)} %</text></g>`;
+    }
+    const marcaEdema = signos.edema ? `<path d="M ${cx + u * 0.75} ${Y(7.35)} L ${cx + u * 1.35} ${Y(7.1)}" stroke="var(--warn)" stroke-width="1.5"/>
+      <text x="${cx + u * 1.4}" y="${Y(7.1) + 4}" font-size="11.5" font-weight="600" fill="var(--warn)">edemas</text>` : "";
+    return `<svg viewBox="0 0 240 300" role="img" aria-label="${mujer ? "Mujer" : "Hombre"} de ${fmt(edad, 0)} años, ${fmt(pf.altura * 100, 0)} cm y ${fmt(pf.peso, 0)} kg, a escala">
+      ${regla}
+      <line x1="16" y1="${suelo}" x2="236" y2="${suelo}" stroke="var(--suelo)" stroke-width="2"/>
+      <line x1="34" y1="${top}" x2="${cx - rx - 6}" y2="${top}" stroke="var(--accent)" stroke-dasharray="3 3"/>
+      <text x="40" y="${top - 5}" font-size="12" font-family="var(--f-mono)" font-weight="600" fill="var(--accent)">${fmt(pf.altura * 100, 0)} cm</text>
+      ${peloAtras}
+      <g fill="${piel}" stroke="${piel}" stroke-width="1" stroke-linejoin="round">
+        <path d="${pierna(-1)}"/><path d="${pierna(1)}"/>${pies}
+        <path d="${torso}"/>
+        <path d="${brazo(-1)}"/><path d="${brazo(1)}"/>
+        <ellipse cx="${cx}" cy="${yc}" rx="${rx}" ry="${ry}"/>
+      </g>
+      ${peloDelante}${baston}${marcaEdema}${bolsa}
+      <g transform="translate(${xc} ${ycz}) scale(${tc})"><path class="late" style="--latido:${lat}s" d="${CORAZON}" fill="var(--oxi)"/></g>
+    </svg>`;
+  }
+
+  function signosDe(v, perdida) {
+    return {
+      edema: v.PVC_mmHg > U.PVC_p95,
+      shock: v.PAS_mmHg < 90,
+      congestion: v.PAI_mmHg > U.PAI_p95,
+      perdida: perdida || 0,
+      htaGrave: v.PAS_mmHg >= 180 || v.PAD_mmHg >= 110,
+      taquicardia: v.FC_lpm > 100,
+    };
+  }
+
+  function figcaptionPersona(pf, f, medicamento, sg, v) {
+    const pos = Math.min(40, Math.max(15, f.imc));
+    const marca = 100 * (pos - 15) / 25;
+    const cat = f.imc < 18.5 ? 0 : f.imc < 25 ? 1 : f.imc < 30 ? 2 : 3;
+    const factores = [];
+    if (pf.fumador) factores.push(`<span class="factor">${ICONOS.fumador}${pf.sexo === "M" ? "Fumadora" : "Fumador"}</span>`);
+    if (pf.diabetes) factores.push(`<span class="factor">${ICONOS.diabetes}Diabetes tipo 2</span>`);
+    if (medicamento && medicamento !== "ninguno") factores.push(`<span class="factor">${ICONOS.medicacion}${MEDICAMENTOS[medicamento].nombre}</span>`);
+    const signos = [];
+    if (sg.perdida > 0) signos.push(`Ha perdido el ${fmt(100 * sg.perdida, 0)} % de su sangre`);
+    if (sg.shock) signos.push(`Piel pálida y fría: tensión baja (PAS ${fmt(v.PAS_mmHg, 0)} mmHg)`);
+    if (sg.edema) signos.push(`Piernas hinchadas (edemas): presión venosa alta (${fmt(v.PVC_mmHg, 1)} mmHg)`);
+    if (sg.congestion) signos.push(`Le cuesta respirar: los pulmones se congestionan (aurícula izquierda ${fmt(v.PAI_mmHg, 1)} mmHg)`);
+    if (sg.htaGrave) signos.push(`Hipertensión grave (${fmt(v.PAS_mmHg, 0)}/${fmt(v.PAD_mmHg, 0)} mmHg): puede dar dolor de cabeza`);
+    if (sg.taquicardia) signos.push(`Taquicardia: el corazón late deprisa (${fmt(v.FC_lpm, 0)} lpm)`);
+    return `<div><div class="linea-1">${pf.sexo === "M" ? "Mujer" : "Hombre"}, ${fmt(pf.edad, 0)} años</div>
+        <div class="linea-2">${fmt(pf.altura * 100, 0)} cm · ${fmt(pf.peso, 0)} kg · IMC ${fmt(f.imc, 1)} (${f.catIMC})</div></div>
+      <div class="imc" role="img" aria-label="IMC ${fmt(f.imc, 1)}: ${f.catIMC}">
+        <div class="pista">${["bajo peso", "normal", "sobrepeso", "obesidad"].map((n, i) => `<span class="${i === cat ? "actual" : ""}" title="${n}"></span>`).join("")}<i class="marca" style="left:${marca}%"></i></div>
+        <div class="escala"><span></span><span>18,5</span><span>25</span><span>30</span></div>
+      </div>
+      <div class="factores">${factores.join("") || '<span class="factor ninguno">Sin tabaco, diabetes ni medicación</span>'}</div>
+      ${signos.length ? `<div class="signos"><span class="titulo-fig">Qué notaría el paciente</span><ul>${signos.map(x => `<li>${x}</li>`).join("")}</ul><small>Signos típicos de estos valores; la figura es una ilustración.</small></div>` : ""}`;
+  }
+
+  function svgCircuito(v, ic) {
+    const gc = v.GC_Lmin, ancho = Math.min(13, Math.max(3, gc * 1.35)).toFixed(1);
+    const dur = (1.6 * 5 / Math.max(gc, 0.5)).toFixed(2), lat = (60 / Math.max(v.FC_lpm, 20)).toFixed(3);
+    const esc = Math.min(1.35, Math.max(0.8, Math.cbrt(v.EDV_mL / 120)));         // tamaño del VI según su volumen
+    const rxI = 40 * esc, ryI = 54 * esc, cxI = 338, cy = 168;
+    const sist = Math.max(0.35, Math.cbrt(Math.max(v.ESV_mL, 1) / Math.max(v.EDV_mL, 1))).toFixed(3);
+    const est = (k, x) => COLOR_ESTADO[estado(k, x).cls];
+    const pa = v.PAS_mmHg < 90 || v.PAS_mmHg >= 140 ? ["PAS_mmHg", v.PAS_mmHg] : ["PAD_mmHg", v.PAD_mmHg];
+    const nota = (x, y, nombre, valor, color, ancla = "start") => `<g>
+        <circle cx="${ancla === "start" ? x + 5 : x - 5}" cy="${y - 5}" r="5" fill="${color}"/>
+        <text class="n" x="${ancla === "start" ? x + 15 : x - 15}" y="${y}" font-size="12.5" text-anchor="${ancla}">${nombre}</text>
+        <text class="v" x="${ancla === "start" ? x : x}" y="${y + 21}" font-size="17" text-anchor="${ancla}">${valor}</text></g>`;
+    const vaso = (d, color, marca) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="${ancho}" stroke-linejoin="round" marker-end="url(#${marca})"/>
+      <path class="flujo" style="--dur:${dur}s" d="${d}" fill="none" stroke="var(--surface)" stroke-opacity=".75" stroke-width="${Math.max(1.5, ancho / 3).toFixed(1)}"/>`;
+    const estAo = v.Grad_Ao_medio_mmHg >= 20, estMi = v.Grad_Mi_medio_mmHg >= 5, congestion = v.PAI_mmHg > U.PAI_p95;
+    // válvula: dos velos que se abren en el sentido del flujo; con estenosis, más gruesos y casi cerrados
+    const valvula = (x, y, vertical, estrecha) => {
+      const c = estrecha ? "var(--warn)" : "var(--ink-2)", w = estrecha ? 4 : 2.2, h = 15, ab = estrecha ? 3 : 8, lg = estrecha ? 9 : 11;
+      const velos = vertical
+        ? `M ${x} ${y - h} Q ${x + lg * 0.4} ${y - h + 4} ${x + lg} ${y - ab} M ${x} ${y + h} Q ${x + lg * 0.4} ${y + h - 4} ${x + lg} ${y + ab}`
+        : `M ${x - h} ${y} Q ${x - h + 4} ${y + lg * 0.4} ${x - ab} ${y + lg} M ${x + h} ${y} Q ${x + h - 4} ${y + lg * 0.4} ${x + ab} ${y + lg}`;
+      return `<path d="${velos}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+    };
+    const xAo = cxI + rxI + 8, yMi = cy - ryI - 8;
+    return `<svg viewBox="0 0 600 340" role="img" aria-label="Esquema de la circulación con la tensión, las presiones y el gasto cardíaco del paciente">
+      <defs>
+        <marker id="fl-oxi" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--oxi)"/></marker>
+        <marker id="fl-des" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--desoxi)"/></marker>
+      </defs>
+      <rect x="205" y="14" width="190" height="46" rx="23" fill="${congestion ? "var(--warn-bg)" : "var(--surface-2)"}" stroke="${congestion ? "var(--warn)" : "var(--line-2)"}"/>
+      <text x="300" y="${congestion ? 35 : 42}" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">Pulmones</text>
+      ${congestion ? `<text x="300" y="52" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--warn)">congestión</text>` : ""}
+      <rect x="205" y="276" width="190" height="52" rx="26" fill="var(--surface-2)" stroke="var(--line-2)"/>
+      <text x="300" y="298" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">Resto del cuerpo</text>
+      <text class="v" x="300" y="318" text-anchor="middle" font-size="13">IC ${fmt(ic, 1)} L/min/m²</text>
+      <circle cx="${300 + 70}" cy="313" r="5" fill="${est("IC", ic)}"/>
+      ${vaso(`M 262 ${cy - 52} L 262 66`, "var(--desoxi)", "fl-des")}
+      ${vaso(`M 338 60 L 338 ${yMi - 18}`, "var(--oxi)", "fl-oxi")}
+      ${vaso(`M ${xAo + 16} ${cy} L 478 ${cy} L 478 302 L 402 302`, "var(--oxi)", "fl-oxi")}
+      ${vaso(`M 205 302 L 122 302 L 122 ${cy} L 214 ${cy}`, "var(--desoxi)", "fl-des")}
+      <path d="M 300 ${cy + 92} C 210 ${cy + 40} 196 ${cy - 34} 222 ${cy - 62} C 246 ${cy - 86} 286 ${cy - 76} 300 ${cy - 52} C 314 ${cy - 76} ${354 + 30 * (esc - 1)} ${cy - 86} ${378 + 30 * (esc - 1)} ${cy - 62} C ${404 + 30 * (esc - 1)} ${cy - 34} 390 ${cy + 40} 300 ${cy + 92} Z" fill="var(--surface)" stroke="var(--line-2)" stroke-width="1.5"/>
+      <ellipse class="vaciado" style="--latido:${lat}s;--sistole:.86" cx="262" cy="${cy}" rx="32" ry="46" fill="var(--desoxi-soft)" stroke="var(--desoxi)" stroke-width="1.5"/>
+      <ellipse class="vaciado" style="--latido:${lat}s;--sistole:${sist}" cx="${cxI}" cy="${cy}" rx="${rxI}" ry="${ryI}" fill="var(--oxi-soft)" stroke="var(--oxi)" stroke-width="1.5"/>
+      <ellipse cx="${cxI}" cy="${cy}" rx="${(rxI * sist).toFixed(1)}" ry="${(ryI * sist).toFixed(1)}" fill="none" stroke="var(--oxi)" stroke-dasharray="3 4" stroke-opacity=".75"><title>Tamaño al final de la contracción</title></ellipse>
+      <text class="n" x="262" y="${cy + 5}" text-anchor="middle" font-size="12">VD</text>
+      <text class="n" x="${cxI}" y="${cy - 6}" text-anchor="middle" font-size="12">VI</text>
+      <text class="v" x="${cxI}" y="${cy + 14}" text-anchor="middle" font-size="14">FE ${fmt(v.FE_pct, 0)} %</text>
+      <circle cx="${cxI}" cy="${cy + 30}" r="4.5" fill="${est("FE_pct", v.FE_pct)}"/>
+      ${valvula(xAo, cy, true, estAo)}${valvula(cxI, yMi, false, estMi)}
+      ${estAo ? `<text x="${xAo + 22}" y="${cy - 14}" font-size="11.5" fill="var(--warn)" font-weight="600">estenosis ${fmt(v.Grad_Ao_medio_mmHg, 0)} mmHg</text>` : ""}
+      ${estMi ? `<text x="${cxI}" y="${yMi + 26}" text-anchor="middle" font-size="11.5" fill="var(--warn)" font-weight="600">estenosis ${fmt(v.Grad_Mi_medio_mmHg, 0)} mmHg</text>` : ""}
+      ${nota(492, 214, "Aorta", `${fmt(v.PAS_mmHg, 0)}/${fmt(v.PAD_mmHg, 0)}`, est(pa[0], pa[1]))}
+      <text x="492" y="252" font-size="12">mmHg · PAM ${fmt(v.PAM_mmHg, 0)}</text>
+      ${nota(108, 214, "Vena cava", `${fmt(v.PVC_mmHg, 1)}`, est("PVC_mmHg", v.PVC_mmHg), "end")}
+      <text x="108" y="252" font-size="12" text-anchor="end">mmHg (PVC)</text>
+      ${nota(198, 82, "Art. pulmonar", `${fmt(v.PAPs_mmHg, 0)}/${fmt(v.PAPd_mmHg, 0)}`, est("PAPm_mmHg", v.PAPm_mmHg), "end")}
+      ${nota(402, 82, "Aurícula izq.", `${fmt(v.PAI_mmHg, 1)}`, est("PAI_mmHg", v.PAI_mmHg))}
+      <g transform="translate(26 30) scale(26)"><path class="late" style="--latido:${lat}s" d="${CORAZON}" fill="var(--oxi)"/></g>
+      <text class="v" x="46" y="37" font-size="17">${fmt(v.FC_lpm, 0)}</text><text x="${50 + 10.5 * String(Math.round(v.FC_lpm)).length}" y="37" font-size="12">lpm</text>
+      <text class="n" x="584" y="28" text-anchor="end" font-size="12.5">Gasto cardíaco</text>
+      <text class="v" x="584" y="49" text-anchor="end" font-size="17">${fmt(gc, 1)} L/min</text>
+    </svg>`;
+  }
+
+  function pintarVista(pac, v, f, ic) {
+    const sg = signosDe(v, pac.perdida);
+    $("fig-persona").innerHTML = svgPersona(pac.perfil, f.imc, v.FC_lpm, sg);
+    $("cap-persona").innerHTML = figcaptionPersona(pac.perfil, f, pac.medicamento, sg, v);
+    $("fig-circuito").innerHTML = svgCircuito(v, ic);
+  }
+
+  let ultimo = null, ultimoR = null;   // último paciente simulado (para «Editar» y para redibujar)
+  function pintar(pac, r) {
+    const v = r.clinicas, rep = r.reposo, c = construir(pac), f = c.f;
+    const ic = v.GC_Lmin / f.sc;
+    $("perfil-paciente").textContent = textoPerfil(pac.perfil, pac.medicamento) + ` · IMC ${fmt(f.imc, 1)} (${f.catIMC})`;
+    const d = (x, y, u, dec = 0) => rep ? `${x - y >= 0 ? "+" : "−"}${fmt(Math.abs(x - y), dec)} ${u} vs. antes` : "";
+    $("parametros").innerHTML = [
+      tarjeta("Presión arterial", `${fmt(v.PAS_mmHg, 0)}/${fmt(v.PAD_mmHg, 0)} <small>(${fmt(v.PAM_mmHg, 0)}) mmHg</small>`, v.PAS_mmHg < 90 || v.PAS_mmHg >= 140 ? "PAS_mmHg" : "PAD_mmHg", v.PAS_mmHg < 90 || v.PAS_mmHg >= 140 ? v.PAS_mmHg : v.PAD_mmHg, "90–139 / 60–89", rep ? `antes ${fmt(rep.PAS, 0)}/${fmt(rep.PAD, 0)}` : ""),
+      tarjeta("Frecuencia cardíaca", `${fmt(v.FC_lpm, 0)} <small>lpm</small>`, "FC_lpm", v.FC_lpm, "60–100", d(v.FC_lpm, rep && rep.FC, "lpm")),
+      tarjeta("Gasto cardíaco", `${fmt(v.GC_Lmin, 1)} <small>L/min</small>`, "GC_Lmin", v.GC_Lmin, "4–8"),
+      tarjeta("Índice cardíaco", `${fmt(ic, 1)} <small>L/min/m²</small>`, "IC", ic, "2,5–4"),
+      tarjeta("Fracción de eyección", `${fmt(v.FE_pct, 0)} <small>%</small>`, "FE_pct", v.FE_pct, "≥ 50 %"),
+      tarjeta("Presión venosa central", `${fmt(v.PVC_mmHg, 1)} <small>mmHg</small>`, "PVC_mmHg", v.PVC_mmHg, "2–8"),
+      tarjeta("Aurícula izquierda", `${fmt(v.PAI_mmHg, 1)} <small>mmHg</small>`, "PAI_mmHg", v.PAI_mmHg, "6–12"),
+      tarjeta("Arteria pulmonar", `${fmt(v.PAPs_mmHg, 0)}/${fmt(v.PAPd_mmHg, 0)} <small>(${fmt(v.PAPm_mmHg, 0)}) mmHg</small>`, "PAPm_mmHg", v.PAPm_mmHg, "media < 20"),
+      tarjeta("Volumen telediastólico", `${fmt(v.EDV_mL, 0)} <small>mL</small>`, "EDV_mL", v.EDV_mL, "70–150"),
+    ].join("");
+    pintarVista(pac, v, f, ic);
+
+    const o = r.ondas;
+    grafica($("g-presion"), [
+      { x: o.t, y: o.P_ao, color: "var(--s2)", nombre: "Aorta", unidad: "mmHg" },
+      { x: o.t, y: o.P_lv, color: "var(--s1)", nombre: "Ventrículo izq.", unidad: "mmHg" },
+    ], { alto: 250, yDesdeCero: true, xEtiqueta: "tiempo (s)", xUnidad: "s", xFmt: t => fmt(t, 1), aria: "Presión aórtica y ventricular" });
+    grafica($("g-volumen"), [{ x: o.t, y: o.V_lv, color: "var(--s3)", nombre: "Volumen VI", unidad: "mL" }],
+      { alto: 170, xEtiqueta: "tiempo (s)", xUnidad: "s", xFmt: t => fmt(t, 1), aria: "Volumen del ventrículo izquierdo" });
+    grafica($("g-pv"), [{ x: r.pv.V, y: r.pv.P, color: "var(--s1)", nombre: "Bucle PV" }],
+      { alto: 250, cerrar: true, yDesdeCero: true, xIgual: true, xEtiqueta: "volumen (mL)", xFmt: x => fmt(x, 0), aria: "Bucle presión-volumen" });
+
+    const tend = $("bloque-tendencia");
+    tend.hidden = !r.tendencia;
+    if (r.tendencia) {
+      const T = r.tendencia;
+      grafica($("g-pam"), [{ x: T.t, y: T.PAM, color: "var(--s2)", nombre: "PAM", unidad: "mmHg" }],
+        { alto: 190, ref: { y: rep.PAM, texto: `antes: ${fmt(rep.PAM, 0)}` }, xEtiqueta: "segundos tras la hemorragia", xUnidad: "s", xFmt: t => fmt(t, 0), aria: "PAM tras la hemorragia" });
+      grafica($("g-fc"), [{ x: T.t, y: T.FC, color: "var(--s1)", nombre: "FC", unidad: "lpm" }],
+        { alto: 190, ref: { y: rep.FC, texto: `antes: ${fmt(rep.FC, 0)}` }, xEtiqueta: "segundos tras la hemorragia", xUnidad: "s", xFmt: t => fmt(t, 0), aria: "FC tras la hemorragia" });
+    }
+
+    const lista = evaluarCriterios(v, pac.perdida);
+    const cumple = lista.filter(x => x.si);
+    const sano = COHORTES[0].ok(v) && cumple.length === 0;
+    $("lista-dx").innerHTML = cumple.map(x => `<li class="si"><span class="icono">✓</span><div><strong>${x.n}</strong><span>${x.c}</span></div></li>`).join("")
+      + (cumple.length ? "" : `<li><span class="icono">–</span><div><strong>${sano ? "Ninguno: valores de una persona sana" : "Ninguno de los criterios de enfermedad"}</strong><span>${sano ? "Tensión, FE y gasto cardíaco dentro de lo normal." : "Algún valor está fuera de lo normal, pero no cumple los criterios completos de ninguna enfermedad."}</span></div></li>`);
+
+    // tabla: perfil y parámetros finales del modelo
+    const pf = pac.perfil, pm = c.params;
+    const fila = (a, b, u, extra) => `<tr><td>${a}</td><td class="num">${b}</td><td>${u}</td><td class="num">${extra}</td></tr>`;
+    const filas = [
+      `<tr><th colspan="4">Perfil</th></tr>`,
+      fila("Edad → resistencia sistémica · rigidez aórtica", `×${fmt(f.fR, 2)} · ×${fmt(f.fE, 2)}`, "", pf.fumador ? "incluye tabaco ×1,21" : ""),
+      fila("Superficie corporal", fmt(f.sc, 2), "m²", ""),
+      fila("Tamaño del sistema (s)", fmt(f.s, 2), "", "volúmenes ×s, rigideces y resistencias ÷s"),
+      fila("Sangre total del modelo", fmt(c.sangreTotal, 0), "mL", "5300 × s"),
+      fila("Sangre activa (volumen tensionado)", fmt(TENSIONADO_REF + c.volumenExtra, 0), "mL", `${c.volumenExtra >= 0 ? "+" : "−"}${fmt(Math.abs(c.volumenExtra), 0)} mL`),
+      pf.diabetes ? fila("Diabetes → rigidez en el llenado", `×${fmt(DIABETES_LAMBDA, 2)}`, "", `+${fmt(DIABETES_VOL * f.s, 0)} mL de volumen`) : "",
+      pac.medicamento && pac.medicamento !== "ninguno" ? fila("Medicación", MEDICAMENTOS[pac.medicamento].nombre, "", "") : "",
+      pac.perdida > 0 ? fila("Sangre perdida", fmt(c.perdidaML, 0), "mL", `${fmt(100 * pac.perdida, 0)} % del total`) : "",
+      `<tr><th colspan="4">Parámetros finales del modelo</th></tr>`,
+      ...[...BASE, "period"].map(k => {
+        const val = pm[k], rel = val / NOMINAL[k];
+        return fila(NOMBRE_PARAM[k], fmt(val, val < 0.1 ? 4 : 3), UNIDAD_PARAM[k], `×${fmt(rel, 2)}`);
+      }),
+    ];
+    $("tabla-param").innerHTML = `<thead><tr><th>Parámetro</th><th style="text-align:right">Valor</th><th>Unidad</th><th style="text-align:right">vs. nominal</th></tr></thead><tbody>${filas.join("")}</tbody>`;
+    ultimo = pac; ultimoR = r;
+  }
+
+  // ------------------------------------------------------------------ acciones
+  let ocupado = false;
+  function bloquear(si) { ocupado = si; $("btn-generar").disabled = si; $("btn-simular").disabled = si; }
+
+  async function generar() {
+    if (ocupado) return;
+    bloquear(true);
+    const coh = COHORTES.find(c => c.id === $("sel-cohorte").value);
+    const exigir = $("chk-criterio").checked, conPerfil = $("chk-perfil").checked;
+    const t0 = performance.now();
+    let intento = 0, pac, r;
+    try {
+      do {
+        intento++;
+        $("estado-sim").textContent = `Simulando paciente… (intento ${intento})`;
+        pac = pacienteAleatorio(coh, conPerfil);
+        r = await simularPaciente(pac);
+      } while (exigir && !coh.ok(r.clinicas) && intento < 25);
+      const cumple = coh.ok(r.clinicas);
+      $("titulo-paciente").textContent = coh.nombre;
+      $("meta-paciente").textContent = `paciente aleatorio · ${intento} ${intento === 1 ? "intento" : "intentos"} · ${fmt((performance.now() - t0) / 1000, 1)} s`;
+      $("estado-sim").textContent = exigir && !cumple ? "No se encontró un paciente que cumpla los criterios en 25 intentos; se muestra el último." : (pac.perdida > 0 ? `Hemorragia del ${fmt(100 * pac.perdida, 0)} % simulada: reposo, calibración del reflejo y 2 minutos después.` : pac.antes ? "Shock agudo simulado: reposo antes del shock, calibración del reflejo y 2 minutos después." : "Simulación completada: 60 s, valores de los 5 últimos latidos.");
+      pintar(pac, r);
+    } catch (e) { $("estado-sim").textContent = "La simulación falló: " + e.message; }
+    bloquear(false);
+  }
+
+  // modo crear
+  const valores = {};
+  function htmlDeslizador(d) {
+    return `<div class="deslizador"><div class="fila"><label for="rng-${d.k}">${d.t}</label><output id="out-${d.k}"></output></div>
+      <input type="range" id="rng-${d.k}" min="${d.min}" max="${d.max}" step="${d.paso}">${d.ayuda ? `<small>${d.ayuda}</small>` : ""}</div>`;
+  }
+  function construirDeslizadores() {
+    $("deslizadores-perfil").innerHTML = DESLIZ_PERFIL.map(htmlDeslizador).join("");
+    let grupo = null, html = "";
+    for (const d of DESLIZ) {
+      if (d.g !== grupo) { if (grupo) html += "</div>"; html += `<div class="grupo"><h3>${d.g}</h3>`; grupo = d.g; }
+      html += htmlDeslizador(d);
+    }
+    $("deslizadores").innerHTML = html + "</div>";
+    for (const d of [...DESLIZ_PERFIL, ...DESLIZ]) $(`rng-${d.k}`).addEventListener("input", () => leerDeslizador(d));
+  }
+  function leerDeslizador(d) {
+    const v = parseFloat($(`rng-${d.k}`).value); valores[d.k] = v;
+    $(`out-${d.k}`).textContent = d.unidad ? `${d.k === "vol" && v > 0 ? "+" : ""}${fmt(v, 0)} ${d.unidad}` : `×${fmt(v, 2)}`;
+    if (DESLIZ_PERFIL.includes(d)) resumenPerfil();
+  }
+  function ponerDeslizadores(vals) {
+    for (const d of [...DESLIZ_PERFIL, ...DESLIZ]) if (vals[d.k] != null) { $(`rng-${d.k}`).value = Math.min(d.max, Math.max(d.min, vals[d.k])); leerDeslizador(d); }
+  }
+  function perfilCrear() {
+    return { sexo: $("sexo-m").checked ? "M" : "H", edad: valores.edad, altura: valores.altura / 100, peso: valores.peso,
+      fumador: $("chk-fumador").checked, diabetes: $("chk-diabetes").checked };
+  }
+  function resumenPerfil() {
+    if (valores.peso == null || valores.altura == null || valores.edad == null) return;
+    const f = factoresPerfil(perfilCrear());
+    $("resumen-corporal").innerHTML = `IMC <b>${fmt(f.imc, 1)}</b> (${f.catIMC}) · superficie ${fmt(f.sc, 2)} m² · tamaño ×${fmt(f.s, 2)}<br>
+      Por la edad${perfilCrear().fumador ? " y el tabaco" : ""}: resistencia ×${fmt(f.fR, 2)}, rigidez aórtica ×${fmt(f.fE, 2)}`;
+  }
+  const NORMAL = { E_es_lvf: 1, lambda_lvf: 1, E_es_rvf: 1, R_sys: 1, E_es_ao: 1, R_pul: 1, R_av: 1, R_mt: 1, vol: 0, fc: 80,
+    edad: 45, altura: 175, peso: 70 };
+
+  async function simularCreado() {
+    if (ocupado) return;
+    bloquear(true);
+    const base = { ...NOMINAL };
+    for (const k of ["E_es_lvf", "lambda_lvf", "E_es_rvf", "R_sys", "E_es_ao", "R_pul", "R_av", "R_mt"]) base[k] = NOMINAL[k] * valores[k];
+    base.period = 60 / valores.fc;
+    const hem = $("esc-hemorragia").checked;
+    const pac = { perfil: perfilCrear(), base, volBase: valores.vol, aplicarDifFC: false, medicamento: $("sel-medicacion").value,
+      perdida: hem ? parseFloat($("rng-perdida").value) / 100 : 0, reflejo: $("chk-reflejo").checked };
+    const t0 = performance.now();
+    $("estado-sim").textContent = hem ? "Simulando: reposo, calibración del reflejo y hemorragia…" : "Simulando 60 s…";
+    try {
+      const r = await simularPaciente(pac);
+      $("titulo-paciente").textContent = hem ? `Paciente creado · hemorragia del ${fmt(100 * pac.perdida, 0)} %${pac.reflejo ? "" : " sin barorreflejo"}` : "Paciente creado";
+      $("meta-paciente").textContent = `${fmt((performance.now() - t0) / 1000, 1)} s de cálculo`;
+      $("estado-sim").textContent = r.clinicas.var_PAS_mmHg > 0.5 ? "Aviso: el paciente no llega a un equilibrio estable (la tensión cambia de un latido a otro)." : "Simulación completada.";
+      pintar(pac, r);
+    } catch (e) { $("estado-sim").textContent = "La simulación falló: " + e.message; }
+    bloquear(false);
+  }
+
+  function cambiarModo(crear) {
+    $("tab-aleatorio").setAttribute("aria-selected", String(!crear));
+    $("tab-crear").setAttribute("aria-selected", String(crear));
+    $("modo-aleatorio").hidden = crear; $("modo-crear").hidden = !crear;
+    try { localStorage.setItem("simulador-modo", crear ? "crear" : "aleatorio"); } catch (e) {}
+  }
+
+  // ------------------------------------------------------------------ inicio
+  $("sel-cohorte").innerHTML = COHORTES.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("");
+  $("sel-medicacion").innerHTML = Object.entries(MEDICAMENTOS).map(([k, m]) => `<option value="${k}">${m.nombre}</option>`).join("");
+  function notaMedicacion() { $("nota-medicacion").textContent = MEDICAMENTOS[$("sel-medicacion").value].nota || ""; }
+  function notaCohorte() {
+    const c = COHORTES.find(x => x.id === $("sel-cohorte").value);
+    const pat = Object.entries(c.pat).map(([k, [a, b]]) => `${NOMBRE_PARAM[k][0].toLowerCase() + NOMBRE_PARAM[k].slice(1)} ×${fmt(a, 2)}–${fmt(b, 2)}`);
+    if (c.perdida) pat.push(`pérdida del ${fmt(100 * c.perdida[0], 0)}–${fmt(100 * c.perdida[1], 0)} % de la sangre, con barorreflejo`);
+    if (c.vol[1] > 0) pat.push(`${fmt(c.vol[0], 0)}–${fmt(c.vol[1], 0)} mL de líquido retenido`);
+    if (c.vd) pat.push("ventrículo derecho afectado en 1 de cada 3 pacientes");
+    if (c.agudo) pat.push("shock agudo, con barorreflejo");
+    if (c.fcExtra) pat.push(`frecuencia cardíaca de base +${c.fcExtra} lpm`);
+    $("nota-cohorte").textContent = (pat.length ? "Patología: " + pat.join("; ") + ". " : "") + "Cada persona varía ±20 % alrededor de los valores normales.";
+  }
+  $("sel-cohorte").addEventListener("change", notaCohorte);
+  $("sel-medicacion").addEventListener("change", notaMedicacion);
+  $("btn-generar").addEventListener("click", generar);
+  $("btn-simular").addEventListener("click", simularCreado);
+  $("tab-aleatorio").addEventListener("click", () => cambiarModo(false));
+  $("tab-crear").addEventListener("click", () => cambiarModo(true));
+  $("btn-normal").addEventListener("click", () => {
+    ponerDeslizadores(NORMAL); $("sexo-h").checked = true; $("chk-fumador").checked = false; $("chk-diabetes").checked = false;
+    $("sel-medicacion").value = "ninguno"; notaMedicacion(); resumenPerfil();
+  });
+  for (const id of ["sexo-h", "sexo-m", "chk-fumador", "chk-diabetes"]) $(id).addEventListener("change", resumenPerfil);
+  for (const id of ["esc-reposo", "esc-hemorragia"]) $(id).addEventListener("change", () => { $("opciones-hemorragia").hidden = !$("esc-hemorragia").checked; });
+  $("rng-perdida").addEventListener("input", () => {
+    const f = factoresPerfil(perfilCrear());
+    $("out-perdida").textContent = `${$("rng-perdida").value} % · ${fmt(SANGRE_REF * f.s * $("rng-perdida").value / 100, 0)} mL`;
+  });
+  $("btn-editar").addEventListener("click", () => {
+    if (!ultimo) return;
+    const pac = ultimo, pf = pac.perfil;
+    const fcBase = 60 / pac.base.period + (pac.aplicarDifFC ? factoresPerfil(pf).difFC : 0);
+    const vals = { fc: fcBase, vol: pac.volBase, edad: pf.edad, altura: pf.altura * 100, peso: pf.peso };
+    for (const k of ["E_es_lvf", "lambda_lvf", "E_es_rvf", "R_sys", "E_es_ao", "R_pul", "R_av", "R_mt"]) vals[k] = pac.base[k] / NOMINAL[k];
+    $(pf.sexo === "M" ? "sexo-m" : "sexo-h").checked = true;
+    $("chk-fumador").checked = pf.fumador; $("chk-diabetes").checked = pf.diabetes;
+    $("sel-medicacion").value = pac.medicamento || "ninguno"; notaMedicacion();
+    ponerDeslizadores(vals);
+    $(pac.perdida > 0 ? "esc-hemorragia" : "esc-reposo").checked = true;
+    $("opciones-hemorragia").hidden = !(pac.perdida > 0);
+    if (pac.perdida > 0) $("rng-perdida").value = Math.round(100 * pac.perdida);
+    $("rng-perdida").dispatchEvent(new Event("input"));
+    cambiarModo(true);
+    $("estado-sim").textContent = "Paciente copiado. Cambia los valores y pulsa «Simular». (Los parámetros sin deslizador conservan los valores normales).";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  construirDeslizadores();
+  ponerDeslizadores(NORMAL);
+  $("rng-perdida").dispatchEvent(new Event("input"));
+  notaCohorte(); notaMedicacion(); resumenPerfil();
+  try { if (localStorage.getItem("simulador-modo") === "crear") cambiarModo(true); } catch (e) {}
+
+  // primer paciente: el nominal (hombre de 45 años, 1,75 m, 70 kg), para que la página se vea completa al abrirla
+  (async () => {
+    bloquear(true);
+    $("estado-sim").textContent = "Simulando el paciente nominal…";
+    const pac = { perfil: { ...PERFIL_REF }, base: { ...NOMINAL }, volBase: 0, aplicarDifFC: false, medicamento: "ninguno", perdida: 0, reflejo: true };
+    try {
+      const r = await simularPaciente(pac);
+      $("titulo-paciente").textContent = "Paciente nominal (sano)";
+      $("meta-paciente").textContent = `valores normales del modelo · ${fmt(r.ms / 1000, 1)} s`;
+      $("estado-sim").textContent = "Listo. Genera un paciente aleatorio o crea uno.";
+      pintar(pac, r);
+    } catch (e) { $("estado-sim").textContent = "No se pudo iniciar el modelo: " + e.message; }
+    bloquear(false);
+  })();
+
+  let ultimoAncho = window.innerWidth;
+  window.addEventListener("resize", () => {
+    if (Math.abs(window.innerWidth - ultimoAncho) < 40 || !ultimo) return;
+    ultimoAncho = window.innerWidth;
+    clearTimeout(window.__rz); window.__rz = setTimeout(() => pintar(ultimo, ultimoR), 150);
+  });
+})();
+</script>
+</body>
+</html>
