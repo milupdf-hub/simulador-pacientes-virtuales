@@ -200,7 +200,7 @@ details p, details li { color: var(--ink-2); font-size: 13.5px; max-width: 75ch;
       <h1>Simulador de pacientes virtuales</h1>
       <p>Genera un paciente o defínelo tú, y observa su circulación latido a latido: tensión, gasto cardíaco, presiones de llenado y el bucle presión-volumen del ventrículo izquierdo.</p>
     </div>
-    <span class="sello">Smith 2004 · barorreflejo de Ursino 1998 · modelo v5 + perfil del paciente (v6)</span>
+    <span class="sello">Smith 2004 · barorreflejo de Ursino 1998 · perfil del paciente · versión final (v6)</span>
   </header>
 
   <div class="app">
@@ -215,7 +215,7 @@ details p, details li { color: var(--ink-2); font-size: 13.5px; max-width: 75ch;
         <label class="etiqueta" for="sel-cohorte">Enfermedad</label>
         <select id="sel-cohorte"></select>
         <label class="casilla"><input type="checkbox" id="chk-criterio" checked> Repetir hasta que el paciente cumpla los criterios clínicos de la enfermedad (como el generador de la base de datos)</label>
-        <label class="casilla"><input type="checkbox" id="chk-perfil" checked> Sortear también el perfil (sexo, edad, altura, peso, tabaco, diabetes). Sin marcar: hombre de 45 años, 1,75 m y 70 kg, como la base de datos v5</label>
+        <label class="casilla"><input type="checkbox" id="chk-perfil" checked> Sortear también el perfil (sexo, edad, altura, peso, tabaco, diabetes). Sin marcar: hombre de 45 años, 1,75 m y 70 kg (el paciente de referencia del modelo)</label>
         <p class="nota" id="nota-cohorte"></p>
         <button class="boton" id="btn-generar">Generar paciente</button>
       </section>
@@ -328,10 +328,10 @@ details p, details li { color: var(--ink-2); font-size: 13.5px; max-width: 75ch;
 
       <details class="panel">
         <summary>Sobre el modelo</summary>
-        <p>Modelo hemodinámico mínimo de Smith, Chase, Nokes, Shaw y Wake (2004): dos ventrículos con interacción a través del septo, pericardio, aorta, vena cava, arteria y vena pulmonares y cuatro válvulas. La versión v5 de este proyecto añade el barorreflejo carotídeo de Ursino (1998), una sístole que se acorta al subir la frecuencia y presiones de llenado realistas.</p>
+        <p>Modelo hemodinámico mínimo de Smith, Chase, Nokes, Shaw y Wake (2004): dos ventrículos con interacción a través del septo, pericardio, aorta, vena cava, arteria y vena pulmonares y cuatro válvulas. La versión final de este proyecto (v6) añade el barorreflejo carotídeo de Ursino (1998), una sístole que se acorta al subir la frecuencia, presiones de llenado realistas y un perfil para cada paciente (sexo, edad, tamaño corporal y factores de riesgo de la población española).</p>
         <ul>
           <li>Integración con Runge-Kutta de 4.º orden, paso de 1 ms, en tu navegador. Enfermedades crónicas: 60 s con el barorreflejo en reposo. Hemorragia: 30 s de reposo, 40 s de calibración del reflejo y 120 s tras la pérdida de sangre. El shock cardiogénico, que es agudo, se simula igual: reposo de la persona antes del shock, calibración y 120 s con la enfermedad.</li>
-          <li>Validación: 160 pacientes de la base de datos v5 simulados aquí dan los mismos valores que OpenCOR (diferencia máxima de 0,08 mmHg en la tensión y 0,04 lpm en la FC).</li>
+          <li>Validación: 160 pacientes de la base de datos v6 (10 por cohorte, incluidos los shocks y las hemorragias) simulados aquí dan los mismos valores que OpenCOR (diferencia máxima de 0,1 mmHg en la tensión y 0,05 lpm en la FC).</li>
           <li>Perfil del paciente (secciones 8.5–8.8 de las referencias del proyecto): la edad cambia la resistencia sistémica y la rigidez de la aorta, calibradas para reproducir la tensión por edad del estudio de Framingham (Franklin 1997); el tabaco aumenta la rigidez aórtica un 21 % (Saz-Lara 2021); el tamaño (altura, peso y sexo, fórmula de Nadler) escala volúmenes, rigideces y resistencias de todo el sistema; la diabetes tipo 2 aumenta la presión de llenado 2,5 mmHg (Zoppini 2018, Nagueh 1997); los medicamentos reproducen el efecto medio de los ensayos (Law 2003, McAlister 2009, Beregovich 1975).</li>
           <li>En el modo aleatorio, el perfil se sortea como en la población española, con la edad y el sexo propios de cada enfermedad: sano e hipertensión según el INE 2025 y la prevalencia de hipertensión por edad y sexo (Di@bet.es); el resto, con la edad media y el % de mujeres de registros clínicos (30–79 años). Altura según el año de nacimiento (desviación típica de Carrascosa 2008), IMC calibrado con la Encuesta de Salud de España 2023, tabaco (ESdE 2023) y diabetes por edad y sexo (Di@bet.es), más frecuente con sobrepeso y obesidad (odds ratio 1,9 y 4,6).</li>
           <li>El gasto cardíaco se valora como índice cardíaco (gasto / superficie corporal), porque depende del tamaño del paciente. Los umbrales relativos son los de los sanos de la base de datos v6: percentiles de la presión auricular y venosa, y mediana del índice cardíaco de los sanos del mismo sexo (2,8 L/min/m² en hombres y 2,5 en mujeres), porque en el modelo el índice de las mujeres sanas es más bajo.</li>
